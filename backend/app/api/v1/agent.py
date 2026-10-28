@@ -9,7 +9,7 @@ from app.schemas.agent import AgentCreate, AgentUpdate, AgentOut
 from app.api.v1.auth import get_current_user
 from app.models.execution import ExecutionLog
 
-# prefix="/agents" means all routes here start with /agents
+# prefix="/agents" means all routes here start with /agents1
 router = APIRouter(prefix="/agents", tags=["Agents"])
 
 
