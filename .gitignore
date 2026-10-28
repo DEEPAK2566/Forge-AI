@@ -10,3 +10,6 @@ backend/**/*.pyc
 
 .DS_Store
 Thumbs.db
+
+chromadb_store/
+backend/forge.db

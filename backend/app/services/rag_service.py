@@ -27,11 +27,9 @@ except Exception as e:
 # - Converts text to 384-dimensional vectors
 # - Downloads automatically on first use to ~/.cache/torch/sentence_transformers
 try:
-    from chromadb.utils.embedding_functions import SentenceTransformerEmbeddingFunction
-    embedding_fn = SentenceTransformerEmbeddingFunction(
-        model_name="all-MiniLM-L6-v2"
-    )
-    print("✓ Embedding model ready (sentence-transformers/all-MiniLM-L6-v2)")
+    from chromadb.utils.embedding_functions import ONNXMiniLM_L6_V2
+    embedding_fn = ONNXMiniLM_L6_V2()
+    print("✓ Embedding model ready (ONNX all-MiniLM-L6-v2)")
 except Exception as e:
     print(f"⚠️  Could not load embedding model: {e}")
     embedding_fn = None
