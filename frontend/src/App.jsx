@@ -14,6 +14,7 @@ import WorkflowBuilder  from './pages/Build/WorkflowBuilder'
 import GuardrailBuilder from './pages/Build/GuardrailBuilder'
 import ExecutionMonitor from './pages/Executions/ExecutionMonitor'
 import Discover         from './pages/Discover'
+import BuildHome        from './pages/Build/index'
 
 import useAuthStore from './store/authStore'
 
@@ -31,6 +32,7 @@ function App() {
           <Route index element={<Navigate to="/myspace" replace />} />
           <Route path="myspace"               element={<MySpace />}          />
           <Route path="discover"              element={<Discover />}         />
+          <Route path="build"                 element={<BuildHome />}        />
           <Route path="build/agent"           element={<AgentBuilder />}     />
           <Route path="build/agent/:agentId"  element={<AgentBuilder />}     />
           <Route path="build/tool"            element={<ToolBuilder />}      />

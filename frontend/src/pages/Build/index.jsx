@@ -31,7 +31,7 @@ const buildItems = [
     icon:        BookOpen,
     label:       'Knowledge Base',
     description: 'Upload documents for agents to search and retrieve from',
-    path:        '/build/knowledge',
+    path:        '/build/kb',
     color:       '#F59E0B',
     bg:          'rgba(245,158,11,0.12)',
   },

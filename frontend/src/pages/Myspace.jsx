@@ -40,31 +40,26 @@ export default function MySpace() {
   const [executions,    setExecutions]    = useState([])
   const [loading,       setLoading]       = useState(true)
 
-  useEffect(() => {
-    const fetchAll = async (retryCount = 0) => {
-      try {
-        const [agents, workflows, execs] = await Promise.all([
-          agentService.count(),
-          workflowService.count(),
-          executionService.list(5),
-        ])
-        setAgentCount(agents.count)
-        setWorkflowCount(workflows.count)
-        setExecutions(execs)
-      } catch (err) {
-        // Backend may be waking up (Render free tier sleeps)
-        // Retry up to 3 times with 5 second gaps
-        if (retryCount < 3) {
-          console.log(`Backend waking up — retrying in 5s (attempt ${retryCount + 1}/3)`)
-          setTimeout(() => fetchAll(retryCount + 1), 5000)
-        } else {
-          console.error('Could not reach backend after 3 retries:', err)
-          setAgentCount(0)
-          setWorkflowCount(0)
-        }
-      } finally {
-        setLoading(false)
-      }
+    useEffect(() => {
+    const fetchAll = async () => {
+      // allSettled: each call succeeds or fails on its own,
+      // so one broken endpoint can't zero out the other two
+      const [agents, workflows, execs] = await Promise.allSettled([
+        agentService.count(),
+        workflowService.count(),
+        executionService.list(5),
+      ])
+
+      if (agents.status === 'fulfilled') setAgentCount(agents.value.count)
+      else { console.error('agents/count failed:', agents.reason); setAgentCount('!') }
+
+      if (workflows.status === 'fulfilled') setWorkflowCount(workflows.value.count)
+      else { console.error('workflows/count failed:', workflows.reason); setWorkflowCount('!') }
+
+      if (execs.status === 'fulfilled') setExecutions(execs.value)
+      else console.error('executions list failed:', execs.reason)
+
+      setLoading(false)
     }
     fetchAll()
   }, [])
