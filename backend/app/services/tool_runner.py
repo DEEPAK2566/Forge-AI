@@ -2,22 +2,43 @@
 Tool Runner — generic executor for any FORGE tool.
 
 This file knows NOTHING about specific tools (GitHub, Jira, Databricks etc).
-It only:
-  1. Parses the JSON input from the execution engine
-  2. Sets ALL JSON keys as environment variables (uppercased)
-  3. Matches run() parameters by EXACT name from JSON
-  4. Calls run() with whatever matched
-  5. Restores env vars after
 
-Each tool's run() method is responsible for reading its own env vars
-and handling its own parameter fallbacks. The tool_runner never changes
-when you add a new tool.
+What changed from the old version:
+  OLD: exec() ran the tool's code INSIDE the FastAPI server process, and the
+       inputs were written into the server's os.environ.
+       → a tool could read DATABASE_URL / GEMINI_API_KEY,
+       → a hanging tool froze the worker,
+       → two runs at the same time overwrote each other's env vars.
+  NEW: the code runs in a separate Python process (tool_sandbox.py) with
+       - its own environment containing ONLY the workflow inputs (uppercased),
+       - a hard timeout,
+       - a temporary working folder.
+
+Tools are written exactly as before: they still read os.environ.get("GITHUB_TOKEN")
+and can still receive run() arguments that match input keys by exact name.
 """
 
 import os
+import sys
 import json
-import traceback
-import inspect
+import tempfile
+import subprocess
+
+SANDBOX_SCRIPT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tool_sandbox.py")
+RESULT_MARKER  = "__FORGE_TOOL_RESULT__"
+TOOL_TIMEOUT_SECONDS = 60
+
+# Only these server variables are passed through — the OS needs them to run Python
+# and make HTTPS calls. Nothing from backend/.env is in this list.
+_PASSTHROUGH_ENV = ["PATH", "SYSTEMROOT", "TEMP", "TMP", "LANG", "LC_ALL",
+                    "SSL_CERT_FILE", "REQUESTS_CA_BUNDLE", "HTTPS_PROXY", "HTTP_PROXY", "NO_PROXY"]
+
+# Never let a workflow input overwrite these
+_FORBIDDEN_KEYS = {"PATH", "SYSTEMROOT", "PYTHONPATH", "PYTHONHOME", "LD_PRELOAD"}
+
+
+def _error(message: str) -> str:
+    return json.dumps({"error": True, "message": message})
 
 
 def run_tool(tool_record, input_text: str) -> str:
@@ -25,152 +46,74 @@ def run_tool(tool_record, input_text: str) -> str:
     Execute a tool's Python code with the provided JSON input.
 
     tool_record : SQLAlchemy Tool object (.code, .tool_class, .name)
-    input_text  : JSON string from execution engine
-                  Contains all workflow variables + 'content' key
+    input_text  : JSON string from the execution engine
+                  (workflow variables + 'content' + 'query')
 
-    Returns the tool's string output or a JSON error message.
+    Returns the tool's string output, or a JSON error message.
     """
     if not tool_record or not tool_record.code:
-        return json.dumps({
-            "error":   True,
-            "message": f"Tool '{getattr(tool_record, 'name', '?')}' has no code saved."
-        })
+        return _error(f"Tool '{getattr(tool_record, 'name', '?')}' has no code saved.")
 
-    tool_class_name = (tool_record.tool_class or "").strip()
-    code            = tool_record.code
+    name = tool_record.name
+    print(f"\n[ToolRunner] ── Executing in sandbox: {name} (class: {tool_record.tool_class})")
 
-    print(f"\n[ToolRunner] ── Executing: {tool_record.name} (class: {tool_class_name})")
-
-    # ── Step 1: Parse JSON input ──────────────────────────────────────────
-    input_data = {}
+    # ── 1. Parse JSON input ───────────────────────────────────────────────
     try:
-        parsed = json.loads(input_text.strip())
-        if isinstance(parsed, dict):
-            input_data = {k: str(v).strip() for k, v in parsed.items() if v is not None}
-        print(f"[ToolRunner] Input keys: {list(input_data.keys())}")
+        parsed = json.loads((input_text or "").strip())
+        input_data = ({k: str(v).strip() for k, v in parsed.items() if v is not None}
+                      if isinstance(parsed, dict) else {})
     except Exception:
-        # Not JSON — treat as plain text
-        input_data = {"content": input_text.strip(), "query": input_text.strip()}
-        print(f"[ToolRunner] Input is plain text, wrapped as content/query")
+        text = (input_text or "").strip()
+        input_data = {"content": text, "query": text}
+    print(f"[ToolRunner] Input keys: {list(input_data.keys())}")
 
-    # ── Step 2: Set ALL input keys as env vars ────────────────────────────
-    # We uppercase them so tools can read os.environ.get("GITHUB_TOKEN"),
-    # os.environ.get("JIRA_BASE_URL") etc without any mapping in tool_runner.
-    #
-    # Example JSON: {"github_token": "ghp_...", "github_repo": "org/repo"}
-    # Env vars set: GITHUB_TOKEN=ghp_..., GITHUB_REPO=org/repo
-    #
-    # The tool's own run() method then does:
-    #   token = token or os.environ.get("GITHUB_TOKEN", "")
-    #   repo  = repo  or os.environ.get("GITHUB_REPO",  "")
-    #
-    # This is the ONLY mechanism — tool_runner never knows about specific keys.
-
-    old_env_values = {}
+    # ── 2. Build a minimal environment for the child process ──────────────
+    env = {k: os.environ[k] for k in _PASSTHROUGH_ENV if k in os.environ}
     for key, value in input_data.items():
         env_key = key.upper()
-        old_env_values[env_key] = os.environ.get(env_key)
-        os.environ[env_key] = value
-        display = (value[:4] + "****") if len(value) > 8 else "****"
-        print(f"[ToolRunner] ENV set: {env_key} = {display}")
+        if env_key not in _FORBIDDEN_KEYS:
+            env[env_key] = value
 
+    message = json.dumps({
+        "code":       tool_record.code,
+        "tool_class": tool_record.tool_class or "",
+        "input":      input_data,
+    })
+
+    # ── 3. Run the sandbox process ────────────────────────────────────────
     try:
-        # ── Step 3: Execute tool code ─────────────────────────────────────
-        namespace = {"__builtins__": __builtins__, "os": os}
+        with tempfile.TemporaryDirectory(prefix="forge_tool_") as workdir:
+            proc = subprocess.run(
+                [sys.executable, "-I", SANDBOX_SCRIPT],   # -I = isolated mode
+                input          = message,
+                capture_output = True,
+                text           = True,
+                encoding       = "utf-8",
+                env            = env,
+                cwd            = workdir,
+                timeout        = TOOL_TIMEOUT_SECONDS,
+            )
+    except subprocess.TimeoutExpired:
+        print(f"[ToolRunner] ✗ {name} timed out after {TOOL_TIMEOUT_SECONDS}s")
+        return _error(f"{name} timed out after {TOOL_TIMEOUT_SECONDS} seconds.")
+    except Exception as e:
+        return _error(f"Could not start sandbox for {name}: {e}")
 
-        # Pre-load commonly needed libraries so tools don't need to import
-        # (they still can, these are just convenience pre-loads)
-        _preload = ["requests", "json", "base64", "re", "datetime", "time"]
-        for mod_name in _preload:
-            try:
-                import importlib
-                namespace[mod_name] = importlib.import_module(mod_name)
-            except ImportError:
-                pass
+    # ── 4. Read the result line ───────────────────────────────────────────
+    result_line = None
+    for line in (proc.stdout or "").splitlines():
+        if line.startswith(RESULT_MARKER):
+            result_line = line[len(RESULT_MARKER):]
+    if result_line is None:
+        stderr_tail = (proc.stderr or "")[-800:]
+        print(f"[ToolRunner] ✗ {name} gave no result. stderr:\n{stderr_tail}")
+        return _error(f"{name} crashed without a result. {stderr_tail}")
 
-        try:
-            from pydantic import BaseModel, Field
-            from typing import Optional, List, Dict, Any, Union
-            namespace.update({
-                "BaseModel": BaseModel, "Field": Field,
-                "Optional": Optional, "List": List,
-                "Dict": Dict, "Any": Any, "Union": Union,
-            })
-        except ImportError:
-            pass
-
-        exec(code, namespace)
-
-        # ── Step 4: Find tool class ───────────────────────────────────────
-        tool_class = None
-
-        if tool_class_name and tool_class_name in namespace:
-            tool_class = namespace[tool_class_name]
-            print(f"[ToolRunner] Found class: {tool_class_name}")
-        else:
-            # Auto-detect: first class in namespace with a run() method
-            for name, obj in namespace.items():
-                if (isinstance(obj, type)
-                        and not name.startswith("_")
-                        and name not in ("BaseModel", "Field")
-                        and hasattr(obj, "run")
-                        and callable(getattr(obj, "run", None))):
-                    tool_class = obj
-                    print(f"[ToolRunner] Auto-detected class: {name}")
-                    break
-
-        if not tool_class:
-            return json.dumps({
-                "error":   True,
-                "message": (
-                    f"Class '{tool_class_name}' not found in tool code. "
-                    f"Make sure 'Tool Class' field matches the class name exactly."
-                )
-            })
-
-        # ── Step 5: Instantiate ───────────────────────────────────────────
-        try:
-            tool_instance = tool_class()
-        except Exception as e:
-            return json.dumps({
-                "error":   True,
-                "message": f"Cannot instantiate {tool_class_name}: {str(e)}"
-            })
-
-        # ── Step 6: Match run() kwargs by exact name only ─────────────────
-        # No aliases. No hardcoding. Pure name matching.
-        # If the JSON has "repo" and run() has "repo" → matched.
-        # If the JSON has "github_repo" and run() has "repo" → NOT matched here.
-        # The tool's run() method handles that via os.environ.get("GITHUB_REPO").
-        sig        = inspect.signature(tool_instance.run)
-        param_list = list(sig.parameters.items())[1:]  # skip 'self'
-        kwargs     = {}
-
-        for param_name, param in param_list:
-            if param_name in input_data and input_data[param_name]:
-                kwargs[param_name] = input_data[param_name]
-                print(f"[ToolRunner] Matched param: {param_name}")
-
-        print(f"[ToolRunner] Calling {tool_class_name}.run() | matched params: {list(kwargs.keys())}")
-
-        # ── Step 7: Call run() ────────────────────────────────────────────
-        result = tool_instance.run(**kwargs)
-        output = str(result)
-        print(f"[ToolRunner] ✓ Completed — {len(output)} chars returned")
+    result = json.loads(result_line)
+    if result.get("ok"):
+        output = result.get("output", "")
+        print(f"[ToolRunner] ✓ {name} completed — {len(output)} chars")
         return output
 
-    except Exception as e:
-        tb = traceback.format_exc()
-        print(f"[ToolRunner] ERROR:\n{tb}")
-        return json.dumps({
-            "error":   True,
-            "message": f"{tool_class_name} failed: {str(e)}",
-        })
-
-    finally:
-        # ── Step 8: Restore all env vars ─────────────────────────────────
-        for env_key, old_val in old_env_values.items():
-            if old_val is None:
-                os.environ.pop(env_key, None)
-            else:
-                os.environ[env_key] = old_val
+    print(f"[ToolRunner] ✗ {name} error: {result.get('error')}\n{result.get('trace', '')}")
+    return _error(result.get("error", f"{name} failed"))

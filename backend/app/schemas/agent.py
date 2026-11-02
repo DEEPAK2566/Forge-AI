@@ -28,6 +28,7 @@ class AgentCreate(BaseModel):
     status:             Optional[str]       = "draft"
     tool_ids: Optional[List[int]] = []
     kb_ids:   Optional[List[int]] = []
+    guardrail_ids: Optional[List[int]] = []
 
 class AgentUpdate(BaseModel):
     """

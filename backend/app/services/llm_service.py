@@ -146,7 +146,8 @@ def build_agent_prompt(agent, input_text: str, guardrail_text: str = "", context
     return "\n".join(parts)
 
 def call_gemini(prompt: str, model: str = "gemini-2.5-flash",
-                temperature: float = 0.7, top_p: float = 0.9) -> str:    """
+                temperature: float = 0.7, top_p: float = 0.9) -> str:
+    """
     Call Gemini using the new google-genai SDK.
     
     Free tier limits (as of 2025):
