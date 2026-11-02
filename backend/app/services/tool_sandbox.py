@@ -12,8 +12,12 @@ Why a separate process?
   - Two workflows running tools at the same time no longer overwrite each
     other's environment variables.
 
-Input (stdin):  {"code": "...", "tool_class": "GitHubWriterTool", "input": {...}}
+Input (stdin):  {"code": "...", "tool_class": "GitHubWriterTool", "input": {...},
+                 "mode": "run" | "describe"}
 Output (stdout, last line): {"ok": true, "output": "..."} or {"ok": false, "error": "..."}
+
+mode "describe" does NOT call run(). It only reads run()'s parameters and
+docstrings so the LLM can be told what arguments the tool accepts.
 
 This file must NOT import anything from `app`, so it never loads the server's config.
 """
@@ -39,6 +43,7 @@ def main():
         code       = message["code"]
         class_name = (message.get("tool_class") or "").strip()
         input_data = message.get("input") or {}
+        mode       = message.get("mode", "run")
     except Exception as e:
         _emit({"ok": False, "error": f"Sandbox could not read its input: {e}"})
         return
@@ -76,6 +81,16 @@ def main():
             _emit({"ok": False, "error":
                    f"Class '{class_name}' not found in tool code. "
                    f"Make sure the 'Tool Class' field matches the class name exactly."})
+            return
+
+        if mode == "describe":
+            params = []
+            for pname, p in inspect.signature(tool_class.run).parameters.items():
+                if pname == "self" or p.kind in (p.VAR_POSITIONAL, p.VAR_KEYWORD):
+                    continue
+                params.append({"name": pname, "required": p.default is inspect.Parameter.empty})
+            doc = inspect.getdoc(tool_class.run) or inspect.getdoc(tool_class) or ""
+            _emit({"ok": True, "output": json.dumps({"params": params, "doc": doc[:1500]})})
             return
 
         instance = tool_class()

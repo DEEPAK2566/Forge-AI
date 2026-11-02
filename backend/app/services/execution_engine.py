@@ -138,8 +138,9 @@ def _run_single_node(
     try:
         from app.models.tools import Tool
         from app.models.knowledge_base import KnowledgeBase
-        from app.services.tool_runner import run_tool
+        from app.services.tool_runner import run_tool, describe_tool, is_secret_name
         from app.services.rag_service import search_collection
+        from app.services.llm_service import call_llm_with_tools
 
         agent = db.query(Agent).filter(Agent.id == agent_id).first()
         if not agent:
@@ -161,41 +162,93 @@ def _run_single_node(
                     f"=== KNOWLEDGE BASE: {kb.name} (use this as reference, cite [n]) ===\n{numbered}"
                 )
 
-        # ── 2. Tools: run each attached tool for real (in the sandbox) ────
-        for tool_id in (agent.tool_ids or []):
-            tool_record = db.query(Tool).filter(Tool.id == tool_id).first()
-            if not tool_record:
-                print(f"[Engine] Tool ID {tool_id} not found — skipping")
-                continue
-            tool_input  = _build_tool_input(original_input, input_text)
-            tool_output = run_tool(tool_record, tool_input)
-            print(f"[Engine] Tool '{tool_record.name}': {len(tool_output)} chars")
-            context_sections.append(
-                f"=== REAL OUTPUT FROM TOOL: {tool_record.name} ===\n"
-                f"{redact_secrets(tool_output)}\n"
-                f"(This tool has ALREADY been executed. Use its real output above. "
-                f"Do NOT write code to call it again and do NOT simulate it.)"
-            )
-
-        # ── 3. Guardrails attached to this agent ──────────────────────────
+        # ── 2. Guardrails attached to this agent ──────────────────────────
         guardrails     = load_guardrails(db, getattr(agent, "guardrail_ids", None) or [])
         guardrail_text = build_guardrail_prompt(guardrails)
         if guardrails:
             print(f"[Engine] Guardrails applied: {[g.name for g in guardrails]}")
 
-        # ── 4. Call the LLM with a time limit (max_execution_time) ────────
+        # ── 3. Tools attached to this agent ───────────────────────────────
+        tool_records = []
+        for tool_id in (agent.tool_ids or []):
+            t = db.query(Tool).filter(Tool.id == tool_id).first()
+            if t:
+                tool_records.append(t)
+            else:
+                print(f"[Engine] Tool ID {tool_id} not found — skipping")
+
+        # Workflow inputs (credentials, variables) + content/query, as a dict
+        base_tool_input = _json.loads(_build_tool_input(original_input, input_text))
+        safe_input      = redact_secrets(input_text)
+        tool_calls      = []
+        display_names   = {}   # function name -> tool name, for the monitor
+
+        def think():
+            """Everything the LLM does for this node — runs under the time limit."""
+            context = "\n\n".join(context_sections)
+
+            if not tool_records:
+                return call_llm(agent, safe_input, True, guardrail_text, context), []
+
+            # ── 3a. Native tool calling: the LLM decides when/how to call ──
+            try:
+                auto_keys = {k for k in base_tool_input if k not in ("content", "query")}
+                specs, by_name = [], {}
+                for t in tool_records:
+                    spec = describe_tool(t, auto_keys)
+                    specs.append(spec)
+                    by_name[spec["name"]] = t
+                    display_names[spec["name"]] = t.name
+                print(f"[Engine] Tools offered to LLM: {[s['name'] for s in specs]}")
+
+                def execute_tool(function_name: str, args: dict) -> str:
+                    t = by_name.get(function_name)
+                    if not t:
+                        return _json.dumps({"error": True, "message": f"Unknown tool {function_name}"})
+                    merged = dict(base_tool_input)
+                    for k, v in args.items():
+                        if not is_secret_name(k):        # the LLM may never set credentials
+                            merged[k] = v
+                    print(f"[Engine] LLM called {t.name} with {list(args.keys())}")
+                    return redact_secrets(run_tool(t, _json.dumps(merged)))
+
+                return call_llm_with_tools(agent, safe_input, guardrail_text, context,
+                                           specs, execute_tool)
+
+            # ── 3b. Fallback: old behaviour — run every tool first ────────
+            except Exception as e:
+                print(f"[Engine] Tool calling unavailable ({e}) — running tools up-front instead")
+                calls, sections = [], list(context_sections)
+                for t in tool_records:
+                    out = redact_secrets(run_tool(t, _json.dumps(base_tool_input)))
+                    calls.append({"tool": t.name, "args": {"mode": "pre-run"}, "result": out})
+                    sections.append(
+                        f"=== REAL OUTPUT FROM TOOL: {t.name} ===\n{out}\n"
+                        f"(This tool has ALREADY been executed. Use its real output above. "
+                        f"Do NOT write code to call it again and do NOT simulate it.)"
+                    )
+                return call_llm(agent, safe_input, True, guardrail_text,
+                                "\n\n".join(sections)), calls
+
+        # ── 4. Run it with a time limit (max_execution_time) ──────────────
         time_limit = agent.max_execution_time or 300
         pool = ThreadPoolExecutor(max_workers=1)
-        future = pool.submit(
-            call_llm, agent, redact_secrets(input_text),
-            True, guardrail_text, "\n\n".join(context_sections),
-        )
+        future = pool.submit(think)
         try:
-            output = future.result(timeout=time_limit)
+            output, tool_calls = future.result(timeout=time_limit)
         except _FutureTimeout:
             raise TimeoutError(f"Agent exceeded max execution time ({time_limit}s)")
         finally:
             pool.shutdown(wait=False)
+
+        # Save every tool call (redacted, trimmed) for the Execution Monitor
+        log.tool_calls = [
+            {"tool": display_names.get(c["tool"], c["tool"]),
+             "args": {k: redact_secrets(str(v))[:300] for k, v in c["args"].items()
+                      if not is_secret_name(k)},
+             "result": redact_secrets(c["result"])[:1500]}
+            for c in tool_calls
+        ]
 
         # ── 5. Enforce BLOCK: rules in code, then redact before saving ────
         allowed, reason = check_output(guardrails, output)

@@ -21,6 +21,7 @@ and can still receive run() arguments that match input keys by exact name.
 import os
 import sys
 import json
+import re
 import tempfile
 import subprocess
 
@@ -39,6 +40,85 @@ _FORBIDDEN_KEYS = {"PATH", "SYSTEMROOT", "PYTHONPATH", "PYTHONHOME", "LD_PRELOAD
 
 def _error(message: str) -> str:
     return json.dumps({"error": True, "message": message})
+
+
+def _call_sandbox(tool_record, input_data: dict, mode: str = "run"):
+    """Start tool_sandbox.py and return its result dict (or None on crash/timeout)."""
+    env = {k: os.environ[k] for k in _PASSTHROUGH_ENV if k in os.environ}
+    for key, value in input_data.items():
+        env_key = key.upper()
+        if env_key not in _FORBIDDEN_KEYS:
+            env[env_key] = value
+
+    message = json.dumps({
+        "code":       tool_record.code,
+        "tool_class": tool_record.tool_class or "",
+        "input":      input_data,
+        "mode":       mode,
+    })
+    with tempfile.TemporaryDirectory(prefix="forge_tool_") as workdir:
+        proc = subprocess.run(
+            [sys.executable, "-I", SANDBOX_SCRIPT],   # -I = isolated mode
+            input=message, capture_output=True, text=True, encoding="utf-8",
+            env=env, cwd=workdir, timeout=TOOL_TIMEOUT_SECONDS,
+        )
+    result_line = None
+    for line in (proc.stdout or "").splitlines():
+        if line.startswith(RESULT_MARKER):
+            result_line = line[len(RESULT_MARKER):]
+    if result_line is None:
+        return {"ok": False, "error": f"crashed without a result. {(proc.stderr or '')[-800:]}"}
+    return json.loads(result_line)
+
+
+# Parameter names the LLM must never fill in — credentials come from the
+# workflow inputs (env vars), never from the model.
+_SECRET_PARAM_HINTS = ("token", "password", "secret", "api_key", "apikey", "credential")
+
+
+def is_secret_name(name: str) -> bool:
+    lowered = (name or "").lower()
+    return any(h in lowered for h in _SECRET_PARAM_HINTS)
+
+
+def function_name_for(tool_record) -> str:
+    """Tool name -> a valid function name for Gemini/Groq (letters, digits, _)."""
+    base = re.sub(r"[^A-Za-z0-9_]", "_", (tool_record.name or "tool")).strip("_") or "tool"
+    if not re.match(r"[A-Za-z_]", base[0]):
+        base = "t_" + base
+    return f"{base[:50]}_{tool_record.id}"
+
+
+def describe_tool(tool_record, auto_keys: set) -> dict:
+    """
+    Build a function definition the LLM can call, from the tool's run() signature.
+
+    auto_keys: input names FORGE already supplies (workflow inputs such as
+               github_token, jira_base_url). These are hidden from the LLM.
+    Returns {"name", "description", "params": [{"name", "required"}]}.
+    """
+    info = {"params": [], "doc": ""}
+    try:
+        result = _call_sandbox(tool_record, {}, mode="describe")
+        if result.get("ok"):
+            info = json.loads(result["output"])
+    except Exception as e:
+        print(f"[ToolRunner] describe failed for {tool_record.name}: {e}")
+
+    params = []
+    for p in info.get("params", []):
+        if p["name"] in auto_keys or is_secret_name(p["name"]):
+            continue
+        params.append(p)
+
+    description = (tool_record.description or "").strip()
+    if info.get("doc"):
+        description = f"{description}\n{info['doc']}".strip()
+    return {
+        "name":        function_name_for(tool_record),
+        "description": (description or f"Run the {tool_record.name} tool.")[:1000],
+        "params":      params,
+    }
 
 
 def run_tool(tool_record, input_text: str) -> str:
@@ -67,53 +147,20 @@ def run_tool(tool_record, input_text: str) -> str:
         input_data = {"content": text, "query": text}
     print(f"[ToolRunner] Input keys: {list(input_data.keys())}")
 
-    # ── 2. Build a minimal environment for the child process ──────────────
-    env = {k: os.environ[k] for k in _PASSTHROUGH_ENV if k in os.environ}
-    for key, value in input_data.items():
-        env_key = key.upper()
-        if env_key not in _FORBIDDEN_KEYS:
-            env[env_key] = value
-
-    message = json.dumps({
-        "code":       tool_record.code,
-        "tool_class": tool_record.tool_class or "",
-        "input":      input_data,
-    })
-
-    # ── 3. Run the sandbox process ────────────────────────────────────────
+    # ── 2. Run it in the sandbox process ──────────────────────────────────
     try:
-        with tempfile.TemporaryDirectory(prefix="forge_tool_") as workdir:
-            proc = subprocess.run(
-                [sys.executable, "-I", SANDBOX_SCRIPT],   # -I = isolated mode
-                input          = message,
-                capture_output = True,
-                text           = True,
-                encoding       = "utf-8",
-                env            = env,
-                cwd            = workdir,
-                timeout        = TOOL_TIMEOUT_SECONDS,
-            )
+        result = _call_sandbox(tool_record, input_data, mode="run")
     except subprocess.TimeoutExpired:
         print(f"[ToolRunner] ✗ {name} timed out after {TOOL_TIMEOUT_SECONDS}s")
         return _error(f"{name} timed out after {TOOL_TIMEOUT_SECONDS} seconds.")
     except Exception as e:
         return _error(f"Could not start sandbox for {name}: {e}")
 
-    # ── 4. Read the result line ───────────────────────────────────────────
-    result_line = None
-    for line in (proc.stdout or "").splitlines():
-        if line.startswith(RESULT_MARKER):
-            result_line = line[len(RESULT_MARKER):]
-    if result_line is None:
-        stderr_tail = (proc.stderr or "")[-800:]
-        print(f"[ToolRunner] ✗ {name} gave no result. stderr:\n{stderr_tail}")
-        return _error(f"{name} crashed without a result. {stderr_tail}")
-
-    result = json.loads(result_line)
+    # ── 3. Return the output (or a JSON error) ────────────────────────────
     if result.get("ok"):
         output = result.get("output", "")
         print(f"[ToolRunner] ✓ {name} completed — {len(output)} chars")
         return output
 
     print(f"[ToolRunner] ✗ {name} error: {result.get('error')}\n{result.get('trace', '')}")
-    return _error(result.get("error", f"{name} failed"))
+    return _error(f"{name}: {result.get('error', 'failed')}")

@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import Optional, List
+from typing import Optional, List, Any
 from datetime import datetime
 
 class ExecutionLogOut(BaseModel):
@@ -14,6 +14,7 @@ class ExecutionLogOut(BaseModel):
     input:          Optional[str]
     output:         Optional[str]
     error:          Optional[str]
+    tool_calls:     Optional[List[Any]] = []
     started_at:     Optional[datetime]
     finished_at:    Optional[datetime]
     model_config = {"from_attributes": True}

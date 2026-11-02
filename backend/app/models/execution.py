@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey
+from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, JSON
 from sqlalchemy.sql import func
 from app.core.database import Base
 
@@ -49,6 +49,9 @@ class ExecutionLog(Base):
     input          = Column(Text, nullable=True)
     output         = Column(Text, nullable=True)
     error          = Column(Text, nullable=True)
+     # Every tool the LLM called: [{"tool", "args", "result"}]
+    tool_calls     = Column(JSON, default=list)
+
 
     started_at     = Column(DateTime(timezone=True), nullable=True)
     finished_at    = Column(DateTime(timezone=True), nullable=True)
