@@ -41,7 +41,13 @@ export default function Register() {
       storeLogin(data.user, data.access_token)
       navigate('/myspace')
     } catch (err) {
-      setError(err.response?.data?.detail || 'Registration failed. Please try again.')
+      if (!err.response) {
+        setError('Cannot reach the server. It may be waking up (wait 30–60s and retry) or blocked by CORS.')
+      } else if (err.response.status >= 500) {
+        setError('Server error while creating your account. Please try again shortly.')
+      } else {
+        setError(err.response.data?.detail || `Registration failed (code ${err.response.status}).`)
+      }
     } finally {
       setLoading(false)
     }
