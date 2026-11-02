@@ -83,7 +83,7 @@ export default function AgentBuilder() {
     ai_engine: 'gemini', model: 'gemini-2.0-flash',
     behavior_preset: 'balanced', temperature: 0.7, top_p: 0.9,
     max_iterations: 5, max_rpm: 10, max_execution_time: 300,
-    tool_ids: [], kb_ids: [],
+    tool_ids: [], kb_ids: [], guardrail_ids: [],
   })
 
   // If editing, load existing agent data
@@ -112,6 +112,7 @@ export default function AgentBuilder() {
           max_execution_time: agent.max_execution_time ?? 300,
           tool_ids:           agent.tool_ids         || [],
           kb_ids:             agent.kb_ids           || [],
+          guardrail_ids:      agent.guardrail_ids      || [],
         })
       })
       .catch(() => setError('Could not load agent. It may have been deleted.'))
@@ -191,10 +192,15 @@ export default function AgentBuilder() {
       {modal && (
         <SelectItemsModal
           type={modal}
-          currentIds={modal === 'tools' ? form.tool_ids : form.kb_ids}
+          currentIds={
+            modal === 'tools'           ? form.tool_ids :
+            modal === 'knowledge_bases' ? form.kb_ids   :
+                                          form.guardrail_ids
+          }
           onConfirm={(ids) => {
-            if (modal === 'tools')          update('tool_ids', ids)
+            if (modal === 'tools')           update('tool_ids', ids)
             if (modal === 'knowledge_bases') update('kb_ids', ids)
+            if (modal === 'guardrails')      update('guardrail_ids', ids)
             setModal(null)
           }}
           onCancel={() => setModal(null)}
@@ -334,8 +340,18 @@ export default function AgentBuilder() {
                 </div>
                 <span style={{ fontSize: '10px', color: '#5A5A7A' }}>Optional</span>
               </div>
+              {form.guardrail_ids.length > 0 && (
+                <div style={{ marginBottom: '8px', display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                  {form.guardrail_ids.map(id => (
+                    <span key={id} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '3px 8px', borderRadius: '4px', backgroundColor: 'rgba(16,185,129,0.12)', border: '1px solid rgba(16,185,129,0.3)', fontSize: '11px', color: '#10B981' }}>
+                      Guardrail #{id}
+                      <X size={10} style={{ cursor: 'pointer' }} onClick={() => update('guardrail_ids', form.guardrail_ids.filter(i => i !== id))} />
+                    </span>
+                  ))}
+                </div>
+              )}
               <button onClick={() => setModal('guardrails')} style={{ width: '100%', padding: '8px', borderRadius: '8px', cursor: 'pointer', backgroundColor: 'transparent', border: '1px dashed #2A2A3D', color: '#5A5A7A', fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}>
-                <Plus size={12} /> Add Guardrails
+                <Plus size={12} /> {form.guardrail_ids.length > 0 ? 'Change Guardrails' : 'Add Guardrails'}
               </button>
             </div>
           </div>

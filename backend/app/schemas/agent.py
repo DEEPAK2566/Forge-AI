@@ -56,6 +56,7 @@ class AgentUpdate(BaseModel):
     status:             Optional[str]       = None
     tool_ids: Optional[List[int]] = None
     kb_ids:   Optional[List[int]] = None
+    guardrail_ids: Optional[List[int]] = None
 
 class AgentOut(BaseModel):
     """What we send back to the frontend — full agent data."""
@@ -83,5 +84,6 @@ class AgentOut(BaseModel):
     created_at:         Optional[datetime]
     tool_ids: Optional[List[int]] = []
     kb_ids:   Optional[List[int]] = []
+    guardrail_ids: Optional[List[int]] = []
 
     model_config = {"from_attributes": True}

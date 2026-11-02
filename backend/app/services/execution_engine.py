@@ -9,17 +9,21 @@ Flow:
    then pass real tool output to the LLM
 5. Pass each node's LLM output to its children as input
 """
-
 import traceback
 import json as _json
 from datetime import datetime, timezone
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as _FutureTimeout
 
 from app.core.database import SessionLocal
 from app.models.execution import Execution, ExecutionLog
 from app.models.agent import Agent
 from app.models.workflow import Workflow
 from app.services.llm_service import call_llm
+from app.services.guardrail_service import (
+    redact_secrets, load_guardrails, build_guardrail_prompt, check_output,
+)
 
+KB_CHUNKS_PER_KB = 4     # how many chunks to retrieve from each attached KB
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -122,7 +126,7 @@ def _run_single_node(
         agent_emoji    = agent_emoji,
         execution_type = exec_type,
         status         = "running",
-        input          = input_text[:3000],
+        input          = redact_secrets(input_text)[:3000],
         started_at     = datetime.now(timezone.utc),
     )
     db.add(log)
@@ -133,51 +137,71 @@ def _run_single_node(
 
     try:
         from app.models.tools import Tool
+        from app.models.knowledge_base import KnowledgeBase
         from app.services.tool_runner import run_tool
+        from app.services.rag_service import search_collection
 
         agent = db.query(Agent).filter(Agent.id == agent_id).first()
         if not agent:
             raise ValueError(f"Agent ID {agent_id} not found")
 
-        # ── Execute attached tools ────────────────────────────────────────
-        tool_outputs = []
-        tool_ids     = agent.tool_ids or []
+        context_sections = []
 
-        if tool_ids:
-            print(f"[Engine] Tools attached: {tool_ids}")
-            for tool_id in tool_ids:
-                tool_record = db.query(Tool).filter(Tool.id == tool_id).first()
-                if not tool_record:
-                    print(f"[Engine] Tool ID {tool_id} not found — skipping")
-                    continue
+        # ── 1. Knowledge bases: retrieve relevant chunks ──────────────────
+        for kb_id in (agent.kb_ids or []):
+            kb = db.query(KnowledgeBase).filter(KnowledgeBase.id == kb_id).first()
+            if not kb or not kb.collection_name:
+                print(f"[Engine] KB {kb_id} not found — skipping")
+                continue
+            chunks = search_collection(kb.collection_name, input_text[:2000], KB_CHUNKS_PER_KB)
+            print(f"[Engine] KB '{kb.name}': {len(chunks)} chunks retrieved")
+            if chunks:
+                numbered = "\n\n".join(f"[{i+1}] {c}" for i, c in enumerate(chunks))
+                context_sections.append(
+                    f"=== KNOWLEDGE BASE: {kb.name} (use this as reference, cite [n]) ===\n{numbered}"
+                )
 
-                # Merge: credentials from original_input + content from current input
-                tool_input = _build_tool_input(original_input, input_text)
-
-                tool_output = run_tool(tool_record, tool_input)
-                tool_outputs.append({
-                    "name":   tool_record.name,
-                    "output": tool_output,
-                })
-                print(f"[Engine] Tool '{tool_record.name}': {len(tool_output)} chars")
-
-        # ── Build enriched LLM prompt ─────────────────────────────────────
-        if tool_outputs:
-            tool_section = "\n\n".join(
-                f"=== REAL OUTPUT FROM TOOL: {t['name']} ===\n{t['output']}"
-                for t in tool_outputs
+        # ── 2. Tools: run each attached tool for real (in the sandbox) ────
+        for tool_id in (agent.tool_ids or []):
+            tool_record = db.query(Tool).filter(Tool.id == tool_id).first()
+            if not tool_record:
+                print(f"[Engine] Tool ID {tool_id} not found — skipping")
+                continue
+            tool_input  = _build_tool_input(original_input, input_text)
+            tool_output = run_tool(tool_record, tool_input)
+            print(f"[Engine] Tool '{tool_record.name}': {len(tool_output)} chars")
+            context_sections.append(
+                f"=== REAL OUTPUT FROM TOOL: {tool_record.name} ===\n"
+                f"{redact_secrets(tool_output)}\n"
+                f"(This tool has ALREADY been executed. Use its real output above. "
+                f"Do NOT write code to call it again and do NOT simulate it.)"
             )
-            enriched_input = (
-                f"{tool_section}\n\n"
-                f"=== YOUR TASK ===\n"
-                f"Use the REAL tool output above. Do NOT hallucinate or simulate.\n\n"
-                f"Original context:\n{input_text}"
-            )
-        else:
-            enriched_input = input_text
 
-        # ── Call LLM ─────────────────────────────────────────────────────
-        output = call_llm(agent, enriched_input)
+        # ── 3. Guardrails attached to this agent ──────────────────────────
+        guardrails     = load_guardrails(db, getattr(agent, "guardrail_ids", None) or [])
+        guardrail_text = build_guardrail_prompt(guardrails)
+        if guardrails:
+            print(f"[Engine] Guardrails applied: {[g.name for g in guardrails]}")
+
+        # ── 4. Call the LLM with a time limit (max_execution_time) ────────
+        time_limit = agent.max_execution_time or 300
+        pool = ThreadPoolExecutor(max_workers=1)
+        future = pool.submit(
+            call_llm, agent, redact_secrets(input_text),
+            True, guardrail_text, "\n\n".join(context_sections),
+        )
+        try:
+            output = future.result(timeout=time_limit)
+        except _FutureTimeout:
+            raise TimeoutError(f"Agent exceeded max execution time ({time_limit}s)")
+        finally:
+            pool.shutdown(wait=False)
+
+        # ── 5. Enforce BLOCK: rules in code, then redact before saving ────
+        allowed, reason = check_output(guardrails, output)
+        if not allowed:
+            raise ValueError(reason)
+        output = redact_secrets(output)
 
         log.status      = "completed"
         log.output      = output[:5000]

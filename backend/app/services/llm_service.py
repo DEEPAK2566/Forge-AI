@@ -71,7 +71,7 @@ def _sub(text: str, variables: dict) -> str:
     return re.sub(r'\{\{\s*([^}]+?)\s*\}\}', repl, text)
 
 
-def build_agent_prompt(agent, input_text: str) -> str:
+def build_agent_prompt(agent, input_text: str, guardrail_text: str = "", context_text: str = "") -> str:
     """
     Build the full LLM prompt from agent config + runtime input.
     
@@ -105,6 +105,12 @@ def build_agent_prompt(agent, input_text: str) -> str:
 
     parts = []
 
+    # Guardrails go FIRST so the model reads them before anything else
+    if guardrail_text:
+        parts.append("NON-NEGOTIABLE RULES (you must follow these in every answer):")
+        parts.append(guardrail_text)
+        parts.append("")
+
     if role:
         parts.append(f"You are {role}.")
     else:
@@ -127,12 +133,20 @@ def build_agent_prompt(agent, input_text: str) -> str:
         parts.append(f"Input:\n{input_text or 'Begin.'}")
 
     parts.append("---")
+        
+
+    # Knowledge-base chunks and REAL tool outputs, kept separate from the input
+    # so a JSON input still parses and {{ variables }} still get substituted
+    if context_text:
+        parts.append(context_text)
+        parts.append("---")
+
     parts.append("Provide a clear, structured response.")
 
     return "\n".join(parts)
 
-def call_gemini(prompt: str, model: str = "gemini-2.5-flash") -> str:
-    """
+def call_gemini(prompt: str, model: str = "gemini-2.5-flash",
+                temperature: float = 0.7, top_p: float = 0.9) -> str:    """
     Call Gemini using the new google-genai SDK.
     
     Free tier limits (as of 2025):
@@ -153,8 +167,10 @@ def call_gemini(prompt: str, model: str = "gemini-2.5-flash") -> str:
     candidates = _model_candidates(MODEL_MAP.get(model, model), "gemini")
     try:
         from google import genai
+        from google.genai import types
 
         client = genai.Client(api_key=settings.GEMINI_API_KEY)
+        gen_config = types.GenerateContentConfig(temperature=temperature, top_p=top_p)
         last_error = None
 
         for candidate in candidates:
@@ -162,6 +178,7 @@ def call_gemini(prompt: str, model: str = "gemini-2.5-flash") -> str:
                 response = client.models.generate_content(
                     model    = candidate,
                     contents = prompt,
+                    config = gen_config
                 )
                 if candidate != model:
                     print(f"[LLM] Gemini model {model} unavailable, using fallback {candidate}")
@@ -182,7 +199,7 @@ def call_gemini(prompt: str, model: str = "gemini-2.5-flash") -> str:
         raise RuntimeError(f"Gemini API error: {str(e)}")
 
 
-def call_groq(prompt: str, model: str = "groq/compound") -> str:
+def call_groq(prompt: str, model: str = "groq/compound",temperature: float = 0.7, top_p: float = 0.9) -> str:   
     """
     Call Groq API.
     Free tier: ~30 req/min. Very fast.
@@ -205,8 +222,11 @@ def call_groq(prompt: str, model: str = "groq/compound") -> str:
                 response = client.chat.completions.create(
                     messages   = [{"role": "user", "content": prompt}],
                     model      = candidate,
-                    max_tokens = 2048,
+                    max_tokens  = 2048,
+                    temperature = temperature,
+                    top_p       = top_p,
                 )
+                
                 if candidate != model:
                     print(f"[LLM] Groq model {model} unavailable, using fallback {candidate}")
                 return response.choices[0].message.content
@@ -224,43 +244,44 @@ def call_groq(prompt: str, model: str = "groq/compound") -> str:
 
     except Exception as e:
         raise RuntimeError(f"Groq API error: {str(e)}")
-
-
-def call_llm(agent, input_text: str, fallback: bool = True) -> str:
+    
+def call_llm(agent, input_text: str, fallback: bool = True,
+             guardrail_text: str = "", context_text: str = "") -> str:
     """
     Main entry point — routes to the right LLM based on agent config.
-    
-    fallback=True: if the primary LLM fails, tries the other one.
-    This means executions keep running even if one API has a quota issue.
+
+    guardrail_text : rules from attached guardrails (top of the prompt)
+    context_text   : knowledge-base chunks + real tool outputs
+    fallback=True  : if the primary LLM fails, tries the other one.
     """
-    prompt = build_agent_prompt(agent, input_text)
+    prompt = build_agent_prompt(agent, input_text, guardrail_text, context_text)
     engine = (agent.ai_engine or "gemini").lower()
     model  = agent.model or ("gemini-2.5-flash" if engine == "gemini" else "groq/compound")
 
-    print(f"[LLM] Calling {engine} / {model}")
+    # The sliders in the Agent Builder — previously saved but never used
+    temperature = agent.temperature if agent.temperature is not None else 0.7
+    top_p       = agent.top_p       if agent.top_p       is not None else 0.9
 
-    if engine == "gemini":
-        try:
-            result = call_gemini(prompt, model)
-            print(f"[LLM] ✓ Gemini responded ({len(result)} chars)")
-            return result
-        except Exception as e:
-            if fallback and settings.GROQ_API_KEY:
-                print(f"[LLM] Gemini failed ({e}) — trying Groq fallback")
-                return call_groq(prompt)
-            raise
+    print(f"[LLM] Calling {engine} / {model} | temperature={temperature} top_p={top_p}")
 
-    elif engine == "groq":
+    if engine == "groq":
         try:
-            result = call_groq(prompt, model)
+            result = call_groq(prompt, model, temperature, top_p)
             print(f"[LLM] ✓ Groq responded ({len(result)} chars)")
             return result
         except Exception as e:
             if fallback and settings.GEMINI_API_KEY:
                 print(f"[LLM] Groq failed ({e}) — trying Gemini fallback")
-                return call_gemini(prompt)
+                return call_gemini(prompt, temperature=temperature, top_p=top_p)
             raise
 
-    else:
-        # Unknown engine — default to Gemini
-        return call_gemini(prompt)
+    # "gemini" and any unknown engine
+    try:
+        result = call_gemini(prompt, model, temperature, top_p)
+        print(f"[LLM] ✓ Gemini responded ({len(result)} chars)")
+        return result
+    except Exception as e:
+        if fallback and settings.GROQ_API_KEY:
+            print(f"[LLM] Gemini failed ({e}) — trying Groq fallback")
+            return call_groq(prompt, temperature=temperature, top_p=top_p)
+        raise

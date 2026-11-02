@@ -48,6 +48,7 @@ class Agent(Base):
     # published = visible to everyone in Discover
     tool_ids   = Column(JSON, default=list)   # list of tool IDs attached to this agent
     kb_ids     = Column(JSON, default=list)   # list of knowledge base IDs attached
+    guardrail_ids = Column(JSON, default=list)   # list of guardrail IDs attached
     status     = Column(String(20), default="draft")
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
