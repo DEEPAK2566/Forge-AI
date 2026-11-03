@@ -276,10 +276,112 @@ def _run_single_node(
     finally:
         db.close()
 
+# ── Graph helpers: branch conditions, skipped nodes, loops ────────────────────
+
+from app.core.config import settings
+
+# Limits come from backend/.env (or Render → Environment), with these defaults:
+#   MAX_PARALLEL_AGENTS = 0   → no limit: every ready agent runs at once
+#   MAX_LOOP_ITERATIONS = 50  → highest "Max loops" a Loop node may use
+DEFAULT_LOOPS = 3
+
+
+def _edge_condition(edge: dict) -> str:
+    return ((edge.get("data") or {}).get("condition") or "").strip()
+
+
+def _active_children(output: str, out_edges: list) -> set:
+    """
+    Decide which outgoing connections fire after a node finishes.
+
+    Condition on a connection (set by clicking the connection in the builder):
+      ""                  → always runs
+      "FAILED"            → runs if the output contains FAILED (case-insensitive)
+      "FAILED | ERROR"    → runs if the output contains FAILED or ERROR
+      "else"              → runs only if no other condition matched
+    """
+    text      = (output or "").lower()
+    active    = set()
+    matched   = False
+    else_ones = []
+    for e in out_edges:
+        cond = _edge_condition(e)
+        if not cond:
+            active.add(e["target"])
+        elif cond.lower() == "else":
+            else_ones.append(e["target"])
+        elif any(alt.strip().lower() in text for alt in cond.split("|") if alt.strip()):
+            active.add(e["target"])
+            matched = True
+    if not matched:
+        active.update(else_ones)
+    return active
+
+
+def _log_skipped(node: dict, execution_id: int, reason: str):
+    db = SessionLocal()
+    try:
+        now = datetime.now(timezone.utc)
+        db.add(ExecutionLog(
+            execution_id   = execution_id,
+            node_id        = node["id"],
+            agent_id       = node["data"].get("agent_id"),
+            agent_name     = node["data"].get("agent_name", "Unknown"),
+            agent_emoji    = node["data"].get("avatar_emoji", "🤖"),
+            execution_type = node["data"].get("execution_type", "sequential"),
+            status         = "skipped",
+            output         = reason,
+            started_at     = now,
+            finished_at    = now,
+        ))
+        db.commit()
+    finally:
+        db.close()
+
+
+def _run_node(node: dict, input_text: str, execution_id: int, position: int, original_input: str) -> dict:
+    """Run a node once — or, for loop nodes, repeatedly until the stop text appears."""
+    if node["data"].get("execution_type") != "loop":
+        return _run_single_node(node, input_text, execution_id, position, original_input)
+
+    until     = str(node["data"].get("loop_until") or "").strip()
+    try:
+        max_loops = int(node["data"].get("max_loops") or DEFAULT_LOOPS)
+    except (TypeError, ValueError):
+        max_loops = DEFAULT_LOOPS
+    max_loops = max(1, min(max_loops, settings.MAX_LOOP_ITERATIONS))
+    name   = node["data"].get("agent_name", "Agent")
+    result = None
+    current_input = input_text
+
+    for i in range(1, max_loops + 1):
+        loop_node = {**node, "data": {**node["data"], "agent_name": f"{name} (loop {i}/{max_loops})"}}
+        result = _run_single_node(loop_node, current_input, execution_id, position, original_input)
+        if not result["success"]:
+            return result
+        if until and until.lower() in result["output"].lower():
+            print(f"[Engine] Loop '{name}' finished at iteration {i} (found '{until}')")
+            return result
+        current_input = (
+            f"{input_text}\n\n=== YOUR PREVIOUS ATTEMPT (iteration {i}) ===\n{result['output']}\n\n"
+            f"Review and improve your previous attempt."
+            + (f" When it fully satisfies the task, include the word {until} in your answer." if until else "")
+        )
+    print(f"[Engine] Loop '{name}' stopped at max {max_loops} iterations")
+    return result
+
 
 # ── Main workflow runner ──────────────────────────────────────────────────────
 
 def run_workflow(execution_id: int, workflow_id: int, user_input: str):
+    """
+    Runs the workflow graph wave by wave:
+      - a node is READY when every node feeding into it has finished or been skipped
+      - all ready nodes run at the same time (PARALLEL; no limit unless MAX_PARALLEL_AGENTS is set)
+      - a node with several inputs receives all of them combined (MERGE)
+      - connection conditions decide which children run (BRANCH); the rest are skipped
+      - loop nodes repeat on their own output (LOOP)
+    """
     db = SessionLocal()
     try:
         print(f"\n[Engine] ═══ Execution {execution_id} starting ═══")
@@ -287,7 +389,6 @@ def run_workflow(execution_id: int, workflow_id: int, user_input: str):
         exec_rec = db.query(Execution).filter(Execution.id == execution_id).first()
         if not exec_rec:
             return
-
         exec_rec.status = "running"
         db.commit()
 
@@ -297,82 +398,109 @@ def run_workflow(execution_id: int, workflow_id: int, user_input: str):
             return
 
         nodes = workflow.nodes or []
-        edges = workflow.edges or []
-
+        edges = [e for e in (workflow.edges or []) if e.get("source") and e.get("target")]
         if not nodes:
             _mark_execution_failed(execution_id, "Workflow has no agents", db)
             return
+        db.close()
 
-        print(f"[Engine] '{workflow.name}' | {len(nodes)} nodes | {len(edges)} edges")
-
-        sorted_node_ids = _topological_sort(nodes, edges)
-        if not sorted_node_ids:
-            _mark_execution_failed(execution_id, "Cannot determine order — possible cycle", db)
+        node_map = {n["id"]: n for n in nodes}
+        edges    = [e for e in edges if e["source"] in node_map and e["target"] in node_map]
+        if len(_topological_sort(nodes, edges)) != len(nodes):
+            db = SessionLocal()
+            _mark_execution_failed(
+                execution_id,
+                "The workflow has a cycle. Use a Loop node to repeat an agent instead of connecting back.",
+                db)
             return
 
-        print(f"[Engine] Order: {sorted_node_ids}")
+        parents   = {nid: [e["source"] for e in edges if e["target"] == nid] for nid in node_map}
+        out_edges = {nid: [e for e in edges if e["source"] == nid] for nid in node_map}
+        print(f"[Engine] '{workflow.name}' | {len(nodes)} nodes | {len(edges)} edges")
 
-        node_map     = {n["id"]: n for n in nodes}
-        node_outputs = {}
-        position     = 0
+        outputs   = {}        # node_id -> output text
+        state     = {}        # node_id -> "done" | "skipped"
+        fired     = set()     # (source, target) connections that fired
+        remaining = list(node_map)   # keeps canvas order for ties
+        position  = 0
 
-        for node_id in sorted_node_ids:
-            node       = node_map[node_id]
-            exec_type  = node["data"].get("execution_type", "sequential")
-            parent_ids = _get_incoming(node_id, edges)
+        while remaining:
+            ready = [nid for nid in remaining if all(p in state for p in parents[nid])]
+            if not ready:
+                break
 
-            if not parent_ids:
-                input_text = user_input or "Begin."
-            elif exec_type == "merge":
-                parts = []
-                for pid in parent_ids:
-                    if pid in node_outputs:
-                        pname = node_map[pid]["data"].get("agent_name", pid)
-                        parts.append(f"Result from {pname}:\n{node_outputs[pid]}")
-                input_text = "\n\n---\n\n".join(parts) if parts else user_input
+            to_run = []
+            for nid in ready:
+                remaining.remove(nid)
+                node = node_map[nid]
+                ps   = parents[nid]
+                if not ps:
+                    to_run.append((node, user_input or "Begin."))
+                    continue
+                live = [p for p in ps if (p, nid) in fired]
+                if not live:
+                    state[nid] = "skipped"
+                    _log_skipped(node, execution_id, "Skipped — no incoming branch condition matched.")
+                    print(f"[Engine] ↷ {node['data'].get('agent_name')} skipped")
+                    continue
+                if len(live) == 1:
+                    input_text = outputs[live[0]]
+                else:   # MERGE: combine every input that reached this node
+                    input_text = "\n\n---\n\n".join(
+                        f"Result from {node_map[p]['data'].get('agent_name', p)}:\n{outputs[p]}"
+                        for p in live
+                    )
+                to_run.append((node, input_text))
+
+            if not to_run:
+                continue
+
+            names = [n["data"].get("agent_name") for n, _ in to_run]
+            print(f"[Engine] ▶ Wave: {names}" + (" (parallel)" if len(to_run) > 1 else ""))
+
+            results = []
+            if len(to_run) == 1:
+                node, inp = to_run[0]
+                results.append((node, _run_node(node, inp, execution_id, position, user_input or "")))
             else:
-                input_text = user_input
-                for pid in reversed(parent_ids):
-                    if pid in node_outputs:
-                        input_text = node_outputs[pid]
-                        break
+                limit   = settings.MAX_PARALLEL_AGENTS
+                workers = len(to_run) if limit <= 0 else min(limit, len(to_run))
+                with ThreadPoolExecutor(max_workers=workers) as pool:
+                    futures = [(node, pool.submit(_run_node, node, inp, execution_id,
+                                                  position + i, user_input or ""))
+                               for i, (node, inp) in enumerate(to_run)]
+                    results = [(node, f.result()) for node, f in futures]
+            position += len(to_run)
 
-            db.close()
-
-            result = _run_single_node(
-                node,
-                input_text,
-                execution_id,
-                position,
-                original_input = user_input or "",
-            )
-
-            db = SessionLocal()
-            position += 1
-
-            if not result["success"]:
+            failed = [(n, r) for n, r in results if not r["success"]]
+            if failed:
+                node, r = failed[0]
+                db = SessionLocal()
                 _mark_execution_failed(
                     execution_id,
-                    f"Agent '{node['data'].get('agent_name', node_id)}' failed: "
-                    f"{result.get('error', 'Unknown')}",
-                    db
-                )
+                    f"Agent '{node['data'].get('agent_name', node['id'])}' failed: {r.get('error', 'Unknown')}",
+                    db)
                 return
 
-            node_outputs[node_id] = result["output"]
+            for node, r in results:
+                nid = node["id"]
+                outputs[nid] = r["output"]
+                state[nid]   = "done"
+                for target in _active_children(r["output"], out_edges[nid]):
+                    fired.add((nid, target))
 
+        db = SessionLocal()
         exec_rec = db.query(Execution).filter(Execution.id == execution_id).first()
         if exec_rec:
             exec_rec.status      = "completed"
             exec_rec.finished_at = datetime.now(timezone.utc)
             db.commit()
-
         print(f"[Engine] ═══ Execution {execution_id} COMPLETED ═══\n")
 
     except Exception as e:
-        tb = traceback.format_exc()
-        print(f"[Engine] UNEXPECTED ERROR:\n{tb}")
+        print(f"[Engine] UNEXPECTED ERROR:\n{traceback.format_exc()}")
         try:
+            db = SessionLocal()
             _mark_execution_failed(execution_id, f"Unexpected: {str(e)}", db)
         except Exception:
             pass

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
-import { ChevronRight, CheckCircle, XCircle, Loader, Clock, ChevronDown, ChevronUp, Zap } from 'lucide-react'
+import { ChevronRight, CheckCircle, XCircle, Loader, Clock, ChevronDown, ChevronUp, Zap, Wrench, SkipForward } from 'lucide-react'
 import executionService from '../../services/executionService'
 
 // ── Duration formatter ─────────────────────────────────────────────────────
@@ -16,10 +16,12 @@ function formatDuration(startedAt, finishedAt) {
 // ── Status badge ───────────────────────────────────────────────────────────
 function StatusBadge({ status }) {
   const styles = {
+
     pending:   { bg: 'rgba(90,90,122,0.15)',  color: '#8B8BB3',  label: 'Pending'   },
     running:   { bg: 'rgba(6,182,212,0.12)',  color: '#06B6D4',  label: 'Running'   },
     completed: { bg: 'rgba(16,185,129,0.12)', color: '#10B981',  label: 'Completed' },
     failed:    { bg: 'rgba(239,68,68,0.12)',  color: '#EF4444',  label: 'Failed'    },
+    skipped:   { bg: 'rgba(90,90,122,0.10)',  color: '#5A5A7A',  label: 'Skipped'   },
   }
   const s = styles[status] || styles.pending
   return (
@@ -36,6 +38,8 @@ function StatusBadge({ status }) {
 function StatusIcon({ status, size = 16 }) {
   if (status === 'completed') return <CheckCircle size={size} color="#10B981" />
   if (status === 'failed')    return <XCircle     size={size} color="#EF4444" />
+  if (status === 'skipped')   return <SkipForward size={size} color="#5A5A7A" />
+
   if (status === 'running')   return <Loader      size={size} color="#06B6D4" style={{ animation: 'spin 1s linear infinite' }} />
   return <Clock size={size} color="#5A5A7A" />
 }
@@ -132,6 +136,59 @@ function AgentLogCard({ log }) {
               }}>
                 {log.input}
               </pre>
+            </div>
+          )}
+          {/* Tool calls — what the LLM actually called, with which args */}
+          {log.tool_calls && log.tool_calls.length > 0 && (
+            <div style={{ padding: '12px 16px', borderBottom: '1px solid #2A2A3D' }}>
+              <p style={{ fontSize: '10px', fontWeight: '600', color: '#F59E0B', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '8px' }}>
+                Tool calls ({log.tool_calls.length})
+              </p>
+              {log.tool_calls.map((call, i) => (
+                <div key={i} style={{ marginBottom: '8px', backgroundColor: '#0D0D14', borderRadius: '6px', padding: '10px', border: '1px solid rgba(245,158,11,0.2)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
+                    <Wrench size={12} color="#F59E0B" />
+                    <span style={{ fontSize: '12px', fontWeight: '600', color: '#F0F0FF' }}>
+                      {i + 1}. {call.tool}
+                    </span>
+                  </div>
+                  {Object.keys(call.args || {}).length > 0 && (
+                    <pre style={{ fontSize: '11px', color: '#8B8BB3', whiteSpace: 'pre-wrap', wordBreak: 'break-word', margin: '0 0 6px' }}>
+                      {Object.entries(call.args).map(([k, v]) => `${k}: ${v}`).join('\n')}
+                    </pre>
+                  )}
+                  <pre style={{ fontSize: '11px', color: '#10B981', whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: '140px', overflowY: 'auto', margin: 0 }}>
+                    {call.result}
+                  </pre>
+                </div>
+              ))}
+            </div>
+          )}
+
+                    {/* Tool calls — what the LLM actually called, with which args */}
+          {log.tool_calls && log.tool_calls.length > 0 && (
+            <div style={{ padding: '12px 16px', borderBottom: '1px solid #2A2A3D' }}>
+              <p style={{ fontSize: '10px', fontWeight: '600', color: '#F59E0B', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '8px' }}>
+                Tool calls ({log.tool_calls.length})
+              </p>
+              {log.tool_calls.map((call, i) => (
+                <div key={i} style={{ marginBottom: '8px', backgroundColor: '#0D0D14', borderRadius: '6px', padding: '10px', border: '1px solid rgba(245,158,11,0.2)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
+                    <Wrench size={12} color="#F59E0B" />
+                    <span style={{ fontSize: '12px', fontWeight: '600', color: '#F0F0FF' }}>
+                      {i + 1}. {call.tool}
+                    </span>
+                  </div>
+                  {Object.keys(call.args || {}).length > 0 && (
+                    <pre style={{ fontSize: '11px', color: '#8B8BB3', whiteSpace: 'pre-wrap', wordBreak: 'break-word', margin: '0 0 6px' }}>
+                      {Object.entries(call.args).map(([k, v]) => `${k}: ${v}`).join('\n')}
+                    </pre>
+                  )}
+                  <pre style={{ fontSize: '11px', color: '#10B981', whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: '140px', overflowY: 'auto', margin: 0 }}>
+                    {call.result}
+                  </pre>
+                </div>
+              ))}
             </div>
           )}
 
@@ -246,8 +303,7 @@ export default function ExecutionMonitor() {
   const isRunning  = execution?.status === 'running' || execution?.status === 'pending'
   const duration   = formatDuration(execution?.started_at, execution?.finished_at)
   const totalLogs  = execution?.logs?.length || 0
-  const doneLogs   = execution?.logs?.filter(l => l.status === 'completed' || l.status === 'failed').length || 0
-
+  const doneLogs   = execution?.logs?.filter(l => ['completed', 'failed', 'skipped'].includes(l.status)).length || 0
   return (
     <div className="page-wrapper">
 

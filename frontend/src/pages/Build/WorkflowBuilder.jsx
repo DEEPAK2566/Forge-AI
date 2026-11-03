@@ -22,11 +22,12 @@ import RunWorkflowModal from '../../components/common/RunWorkflowModal'
 
 // ── Execution type definitions ─────────────────────────────────────────────
 const EXEC_TYPES = {
-  sequential: { label: 'Sequential', color: '#7C3AED', desc: 'Runs after the previous agent finishes'       },
-  parallel:   { label: 'Parallel',   color: '#06B6D4', desc: 'Runs at the same time as sibling agents'      },
-  branch:     { label: 'Branch',     color: '#F59E0B', desc: 'One agent fans out to multiple agents'        },
-  merge:      { label: 'Merge',      color: '#10B981', desc: 'Multiple agents combine into one'             },
-  loop:       { label: 'Loop',       color: '#EF4444', desc: 'Cycles back to an earlier node'               },
+  sequential: { label: 'Sequential', color: '#7C3AED', desc: 'Runs after the agents connected into it finish'                 },
+  parallel:   { label: 'Parallel',   color: '#06B6D4', desc: 'Agents that don\'t depend on each other run at the same time'     },
+  branch:     { label: 'Branch',     color: '#F59E0B', desc: 'Click each outgoing connection to set a condition; only matching paths run' },
+  merge:      { label: 'Merge',      color: '#10B981', desc: 'Receives the outputs of every agent connected into it'          },
+  loop:       { label: 'Loop',       color: '#EF4444', desc: 'Re-runs on its own output until the stop text appears'          },
+  
 }
 
 // ── Custom Agent Node — defined OUTSIDE component to prevent re-creation ──
@@ -82,7 +83,7 @@ export default function WorkflowBuilder() {
   const [loadingAgents,  setLoadingAgents]  = useState(true)
 
   const [selectedNodeId, setSelectedNodeId] = useState(null)
-
+  const [selectedEdgeId, setSelectedEdgeId] = useState(null)
   // nodeTypes MUST be memoized — prevents infinite re-render loop
   const nodeTypes = useMemo(() => ({ agentNode: AgentNode }), [])
 
@@ -130,6 +131,29 @@ export default function WorkflowBuilder() {
     setNodes(prev => prev.map(n => n.id === nodeId ? { ...n, data: { ...n.data, execution_type: exType } } : n))
     setIsDirty(true)
   }
+    // Extra settings stored on a node (loop_until, max_loops)
+  const updateNodeData = (nodeId, key, value) => {
+    setNodes(prev => prev.map(n => n.id === nodeId ? { ...n, data: { ...n.data, [key]: value } } : n))
+    setIsDirty(true)
+  }
+
+  // Branch condition stored on a connection, shown as the connection's label
+  const updateEdgeCondition = (edgeId, condition) => {
+    setEdges(prev => prev.map(e => e.id === edgeId ? {
+      ...e,
+      data:         { ...(e.data || {}), condition },
+      label:        condition ? (condition.toLowerCase() === 'else' ? 'else' : `if: ${condition}`) : undefined,
+      labelStyle:   { fill: '#F59E0B', fontSize: 11, fontWeight: 600 },
+      labelBgStyle: { fill: '#13131F' },
+    } : e))
+    setIsDirty(true)
+  }
+
+  const deleteEdge = (edgeId) => {
+    setEdges(prev => prev.filter(e => e.id !== edgeId))
+    setSelectedEdgeId(null)
+    setIsDirty(true)
+  }
 
   const deleteNode = (nodeId) => {
     setNodes(prev => prev.filter(n => n.id !== nodeId))
@@ -155,6 +179,10 @@ export default function WorkflowBuilder() {
 
   const filteredAgents = agents.filter(a => a.name.toLowerCase().includes(agentSearch.toLowerCase()))
   const selectedNode   = nodes.find(n => n.id === selectedNodeId)
+  const selectedEdge   = edges.find(e => e.id === selectedEdgeId)
+  const edgeSource     = selectedEdge && nodes.find(n => n.id === selectedEdge.source)
+  const edgeTarget     = selectedEdge && nodes.find(n => n.id === selectedEdge.target)
+  const inputStyle     = { width: '100%', padding: '8px 10px', borderRadius: '8px', backgroundColor: '#0D0D14', border: '1px solid #2A2A3D', color: '#F0F0FF', fontSize: '12px', outline: 'none', boxSizing: 'border-box' }
 
   const panelStyle = {
     backgroundColor: '#13131F', border: '1px solid #2A2A3D',
@@ -298,8 +326,9 @@ export default function WorkflowBuilder() {
             onNodesChange={onNodesChange} onEdgesChange={onEdgesChange}
             onConnect={onConnect} onInit={setRfInstance}
             onDrop={onDrop} onDragOver={onDragOver}
-            onNodeClick={(e, node) => setSelectedNodeId(node.id)}
-            onPaneClick={() => setSelectedNodeId(null)}
+            onNodeClick={(e, node) => { setSelectedNodeId(node.id); setSelectedEdgeId(null) }}
+            onEdgeClick={(e, edge) => { setSelectedEdgeId(edge.id); setSelectedNodeId(null) }}
+            onPaneClick={() => { setSelectedNodeId(null); setSelectedEdgeId(null) }}
             nodeTypes={nodeTypes}
             fitView deleteKeyCode="Delete"
             snapToGrid snapGrid={[16, 16]}
@@ -348,9 +377,54 @@ export default function WorkflowBuilder() {
                   )
                 })}
 
+                                {/* Loop settings — only for loop nodes */}
+                {selectedNode.data.execution_type === 'loop' && (
+                  <div style={{ marginTop: '10px', padding: '10px', borderRadius: '9px', border: '1px solid rgba(239,68,68,0.3)', backgroundColor: 'rgba(239,68,68,0.05)' }}>
+                    <p style={{ fontSize: '11px', color: '#EF4444', fontWeight: '600', marginBottom: '8px' }}>Loop settings</p>
+                    <label style={{ fontSize: '11px', color: '#8B8BB3', display: 'block', marginBottom: '4px' }}>Stop when output contains</label>
+                    <input value={selectedNode.data.loop_until || ''} placeholder="e.g. APPROVED"
+                      onChange={e => updateNodeData(selectedNode.id, 'loop_until', e.target.value)} style={{ ...inputStyle, marginBottom: '8px' }} />
+                    <label style={{ fontSize: '11px', color: '#8B8BB3', display: 'block', marginBottom: '4px' }}>Max loops (1–50)</label>
+                    <input type="number" min={1} max={50} value={selectedNode.data.max_loops ?? 3}
+                      onChange={e => updateNodeData(selectedNode.id, 'max_loops', Math.max(1, Math.min(50, parseInt(e.target.value) || 1)))} style={inputStyle} />
+                    <p style={{ fontSize: '10px', color: '#5A5A7A', marginTop: '6px', lineHeight: '1.5' }}>
+                      Each round gets the previous answer and is asked to improve it.
+                    </p>
+                  </div>
+                )}
+
+                
                 <div style={{ borderTop: '1px solid #2A2A3D', marginTop: '12px', paddingTop: '12px' }}>
                   <button onClick={() => deleteNode(selectedNode.id)} style={{ width: '100%', padding: '8px', borderRadius: '8px', cursor: 'pointer', backgroundColor: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)', color: '#EF4444', fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}>
                     Remove node
+                  </button>
+                </div>
+              </div>
+            </>
+          ) : selectedEdge ? (
+            <>
+              <div style={{ padding: '12px 16px', borderBottom: '1px solid #2A2A3D', backgroundColor: '#1A1A2E', flexShrink: 0 }}>
+                <div style={{ fontSize: '13px', fontWeight: '600', color: '#F0F0FF', marginBottom: '2px' }}>Connection</div>
+                <div style={{ fontSize: '11px', color: '#5A5A7A' }}>
+                  {edgeSource?.data.agent_name} → {edgeTarget?.data.agent_name}
+                </div>
+              </div>
+              <div style={{ padding: '12px', overflowY: 'auto', flex: 1 }}>
+                <label style={{ fontSize: '11px', color: '#F59E0B', fontWeight: '600', display: 'block', marginBottom: '6px' }}>
+                  Run this path only if the output contains
+                </label>
+                <input value={selectedEdge.data?.condition || ''} placeholder="e.g. FAILED | ERROR   (empty = always)"
+                  onChange={e => updateEdgeCondition(selectedEdge.id, e.target.value)} style={inputStyle} />
+                <div style={{ fontSize: '11px', color: '#5A5A7A', lineHeight: '1.6', marginTop: '10px' }}>
+                  <div>• <b style={{ color: '#8B8BB3' }}>empty</b> — path always runs</div>
+                  <div>• <b style={{ color: '#8B8BB3' }}>FAILED</b> — runs if the text appears (any case)</div>
+                  <div>• <b style={{ color: '#8B8BB3' }}>FAILED | ERROR</b> — either one</div>
+                  <div>• <b style={{ color: '#8B8BB3' }}>else</b> — runs only if no other condition matched</div>
+                  <div style={{ marginTop: '6px' }}>Agents whose paths don't run are shown as <b style={{ color: '#8B8BB3' }}>Skipped</b>.</div>
+                </div>
+                <div style={{ borderTop: '1px solid #2A2A3D', marginTop: '12px', paddingTop: '12px' }}>
+                  <button onClick={() => deleteEdge(selectedEdge.id)} style={{ width: '100%', padding: '8px', borderRadius: '8px', cursor: 'pointer', backgroundColor: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)', color: '#EF4444', fontSize: '12px' }}>
+                    Remove connection
                   </button>
                 </div>
               </div>

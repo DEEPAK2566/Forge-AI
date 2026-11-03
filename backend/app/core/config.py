@@ -31,6 +31,15 @@ class Settings(BaseSettings):
     # ── App ───────────────────────────────────────────────────
     # The React app URL — used in CORS to allow requests from it
     FRONTEND_URL: str = "http://localhost:5173"
+        
+
+    # ── Workflow limits ───────────────────────────────────────
+    # How many agents may run at the same time. 0 = no limit (every ready agent at once).
+    # Set a number on Render if you hit Gemini/Groq rate limits or run out of memory.
+    MAX_PARALLEL_AGENTS: int = 0
+
+    # Highest "Max loops" value a Loop node may use.
+    MAX_LOOP_ITERATIONS: int = 50
 
     class Config:
         env_file = ".env"
