@@ -165,32 +165,6 @@ function AgentLogCard({ log }) {
             </div>
           )}
 
-                    {/* Tool calls — what the LLM actually called, with which args */}
-          {log.tool_calls && log.tool_calls.length > 0 && (
-            <div style={{ padding: '12px 16px', borderBottom: '1px solid #2A2A3D' }}>
-              <p style={{ fontSize: '10px', fontWeight: '600', color: '#F59E0B', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '8px' }}>
-                Tool calls ({log.tool_calls.length})
-              </p>
-              {log.tool_calls.map((call, i) => (
-                <div key={i} style={{ marginBottom: '8px', backgroundColor: '#0D0D14', borderRadius: '6px', padding: '10px', border: '1px solid rgba(245,158,11,0.2)' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
-                    <Wrench size={12} color="#F59E0B" />
-                    <span style={{ fontSize: '12px', fontWeight: '600', color: '#F0F0FF' }}>
-                      {i + 1}. {call.tool}
-                    </span>
-                  </div>
-                  {Object.keys(call.args || {}).length > 0 && (
-                    <pre style={{ fontSize: '11px', color: '#8B8BB3', whiteSpace: 'pre-wrap', wordBreak: 'break-word', margin: '0 0 6px' }}>
-                      {Object.entries(call.args).map(([k, v]) => `${k}: ${v}`).join('\n')}
-                    </pre>
-                  )}
-                  <pre style={{ fontSize: '11px', color: '#10B981', whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: '140px', overflowY: 'auto', margin: 0 }}>
-                    {call.result}
-                  </pre>
-                </div>
-              ))}
-            </div>
-          )}
 
           {/* Output */}
           {log.output && (
