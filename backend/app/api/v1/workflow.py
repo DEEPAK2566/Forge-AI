@@ -7,7 +7,7 @@ from app.models.workflow import Workflow
 from app.models.user import User
 from app.schemas.workflow import WorkflowCreate, WorkflowUpdate, WorkflowOut
 from app.api.v1.auth import get_current_user
-from app.models.execution import Execution, ExecutionLog
+from app.models.execution import Execution, ExecutionLog, ExecutionEvent
 
 router = APIRouter(prefix="/workflows", tags=["Workflows"])
 
@@ -113,6 +113,9 @@ def delete_workflow(workflow_id: int, db: Session = Depends(get_db), current_use
 
     if execution_ids:
         # Delete logs first (they reference execution_id)
+
+                # Delete events and logs first (they reference execution_id)
+        db.query(ExecutionEvent).filter(ExecutionEvent.execution_id.in_(execution_ids)).delete(synchronize_session=False)
         db.query(ExecutionLog).filter(ExecutionLog.execution_id.in_(execution_ids)).delete(synchronize_session=False)
         # Then delete the executions themselves
         db.query(Execution).filter(Execution.id.in_(execution_ids)).delete(synchronize_session=False)

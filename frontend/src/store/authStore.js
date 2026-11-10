@@ -3,12 +3,28 @@ import { create } from 'zustand'
 // create() defines the store
 // (set) is the function you call to update the store
 // Every component that calls useAuthStore() gets access to everything here
+// Read the saved login from localStorage.
+// This runs when the store is CREATED — before React draws anything — so
+// ProtectedRoute sees isLoggedIn = true on the very first render.
+// (Restoring it later in a useEffect was too late: the first render had already
+// redirected to /login, which logged you out on every refresh / new tab.)
+function loadSavedLogin() {
+  try {
+    const token = localStorage.getItem('forge_token')
+    const user  = JSON.parse(localStorage.getItem('forge_user') || 'null')
+    if (token && user) return { user, token, isLoggedIn: true }
+  } catch {
+    localStorage.removeItem('forge_token')
+    localStorage.removeItem('forge_user')
+  }
+  return { user: null, token: null, isLoggedIn: false }
+}
+
 const useAuthStore = create((set) => ({
 
-  // ── State ──────────────────────────────────────────────
-  user:       null,   // { id, email, full_name }
-  token:      null,   // the JWT token string
-  isLoggedIn: false,
+  // ── State (restored immediately from localStorage) ─────
+  // user: { id, email, full_name } | token: the JWT string | isLoggedIn: boolean
+  ...loadSavedLogin(),
 
   // ── Actions (functions that update the state) ──────────
 
@@ -31,20 +47,8 @@ const useAuthStore = create((set) => ({
   // Called ONCE when the app first loads
   // Checks localStorage to restore login state if the user was previously logged in
   // This is why you stay logged in after closing and reopening the browser
-  init: () => {
-    const token = localStorage.getItem('forge_token')
-    const userStr = localStorage.getItem('forge_user')
-    if (token && userStr) {
-      try {
-        const user = JSON.parse(userStr)
-        set({ user, token, isLoggedIn: true })
-      } catch {
-        // If stored data is corrupted, just clear it
-        localStorage.removeItem('forge_token')
-        localStorage.removeItem('forge_user')
-      }
-    }
-  },
+  // (kept so App.jsx's init() call still works — the state is already restored above)
+  init: () => set(loadSavedLogin()),
 }))
 
 export default useAuthStore

@@ -1,37 +1,65 @@
-from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks
-from sqlalchemy.orm import Session
-from typing import List
+import json
+import asyncio
 import threading
+from typing import List, Optional
 
-from app.core.database import get_db
-from app.models.execution import Execution, ExecutionLog
+from fastapi import APIRouter, HTTPException, Depends, Body, Request
+from fastapi.responses import StreamingResponse
+from jose import JWTError
+from sqlalchemy.orm import Session
+
+from app.core.database import get_db, SessionLocal
+from app.models.execution import Execution, ExecutionLog, ExecutionEvent
 from app.models.workflow import Workflow
 from app.models.user import User
-from app.schemas.execution import ExecutionOut
-from app.api.v1.auth import get_current_user
+from app.schemas.execution import ExecutionOut, RunRequest
+from app.api.v1.auth import get_current_user, oauth2_scheme
+from app.services.auth_service import decode_access_token
 from app.services.execution_engine import run_workflow
+from app.services.guardrail_service import redact_secrets
+from app.services.events import emit
 
 router = APIRouter(prefix="/executions", tags=["Executions"])
+
+FINISHED = ("completed", "failed", "cancelled", "interrupted")
+
+
+def _redact_run_input(user_input: str) -> str:
+    """
+    What we STORE about the Run-window input: credentials replaced by [REDACTED].
+    The real values are only passed to the running workflow in memory.
+    """
+    from app.services.tool_runner import is_secret_name
+    try:
+        data = json.loads(user_input or "")
+        if isinstance(data, dict):
+            return json.dumps({k: ("[REDACTED]" if is_secret_name(k) else redact_secrets(str(v)))
+                               for k, v in data.items()})
+    except Exception:
+        pass
+    return redact_secrets(user_input or "")
 
 
 @router.post("/run/{workflow_id}", response_model=ExecutionOut, status_code=201)
 def start_execution(
-    workflow_id:      int,
-    user_input:       str = "",
-    background_tasks: BackgroundTasks = None,
-    db:               Session = Depends(get_db),
-    current_user:     User    = Depends(get_current_user),
+    workflow_id:  int,
+    payload:      Optional[RunRequest] = Body(None),
+    user_input:   str = "",
+    db:           Session = Depends(get_db),
+    current_user: User    = Depends(get_current_user),
 ):
     """
-    POST /executions/run/{workflow_id}?user_input=...
-    
-    Creates an execution record and starts the workflow in a background thread.
-    Returns the execution ID immediately so the frontend can start polling.
-    
-    The actual execution runs in the background via run_workflow().
-    The frontend polls GET /executions/{id} every 2 seconds to see progress.
+    POST /executions/run/{workflow_id}     body: {"user_input": "..."}
+
+    The input goes in the request BODY (not the URL), because URLs are written to
+    server and proxy logs — and the input often contains tokens.
+    (?user_input=... still works for old clients.)
+
+    Creates an execution record, starts the workflow in a background thread and
+    returns immediately. The monitor then follows GET /executions/{id}/stream.
     """
-    # Verify workflow exists and belongs to user
+    raw_input = payload.user_input if payload is not None else user_input
+
     workflow = db.query(Workflow).filter(
         Workflow.id == workflow_id,
         Workflow.user_id == current_user.id
@@ -39,12 +67,11 @@ def start_execution(
     if not workflow:
         raise HTTPException(status_code=404, detail="Workflow not found")
 
-    # Create the execution record
     execution = Execution(
         user_id       = current_user.id,
         workflow_id   = workflow_id,
         workflow_name = workflow.name,
-        user_input    = user_input,
+        user_input    = _redact_run_input(raw_input),   # stored WITHOUT secrets
         status        = "pending",
     )
     db.add(execution)
@@ -54,19 +81,122 @@ def start_execution(
     exec_id = execution.id
     print(f"[API] Created execution {exec_id} for workflow '{workflow.name}'")
 
-    # Start execution in a separate thread
-    # We use threading.Thread instead of BackgroundTasks because
-    # run_workflow opens its own DB session and runs long-running LLM calls
+    # The real input (with tokens) goes to the engine in memory only
     thread = threading.Thread(
         target = run_workflow,
-        args   = (exec_id, workflow_id, user_input),
-        daemon = True,   # daemon=True: thread stops if main process stops
+        args   = (exec_id, workflow_id, raw_input),
+        daemon = True,
     )
     thread.start()
 
-    # Return the execution immediately — frontend will poll for updates
     execution.logs = []
     return execution
+
+
+@router.post("/{execution_id}/cancel", response_model=ExecutionOut)
+def cancel_execution(
+    execution_id: int,
+    db:           Session = Depends(get_db),
+    current_user: User    = Depends(get_current_user),
+):
+    """
+    POST /executions/{id}/cancel
+    Asks a running workflow to stop. The engine checks between steps, so the agent
+    that is mid-answer finishes its current model call, then the run stops.
+    """
+    execution = db.query(Execution).filter(
+        Execution.id == execution_id, Execution.user_id == current_user.id
+    ).first()
+    if not execution:
+        raise HTTPException(status_code=404, detail="Execution not found")
+    if execution.status in ("pending", "running"):
+        execution.status = "cancelling"
+        db.commit()
+        emit(execution_id, "cancel_requested", message="Cancel requested — stopping after the current step")
+    execution.logs = db.query(ExecutionLog).filter(
+        ExecutionLog.execution_id == execution_id).order_by(ExecutionLog.id.asc()).all()
+    return execution
+
+
+@router.get("/{execution_id}/stream")
+async def stream_execution(
+    execution_id: int,
+    request:      Request,
+    after:        int = 0,
+    token:        str = Depends(oauth2_scheme),
+):
+    """
+    GET /executions/{id}/stream?after=<last event id>     (Server-Sent Events)
+
+    Sends every event of this run as it happens:
+        id: 42
+        data: {"id": 42, "type": "tool_started", "agent_name": "Log Reader", ...}
+
+    Replays everything after `after`, so a refresh or reconnect loses nothing.
+    Ends a few seconds after the run finishes. Sends a heartbeat every 15s so
+    proxies (Render, Vercel) don't close an idle connection.
+
+    Uses a short database session per check — an open stream never holds a
+    connection from the pool.
+    """
+    try:
+        user_id = int(decode_access_token(token).get("sub"))
+    except (JWTError, TypeError, ValueError):
+        raise HTTPException(status_code=401, detail="Invalid or expired token. Please log in again.")
+
+    def owns_it() -> bool:
+        db = SessionLocal()
+        try:
+            return db.query(Execution.id).filter(
+                Execution.id == execution_id, Execution.user_id == user_id).first() is not None
+        finally:
+            db.close()
+
+    if not await asyncio.to_thread(owns_it):
+        raise HTTPException(status_code=404, detail="Execution not found")
+
+    def fetch(last_id: int):
+        db = SessionLocal()
+        try:
+            rows = (db.query(ExecutionEvent)
+                    .filter(ExecutionEvent.execution_id == execution_id, ExecutionEvent.id > last_id)
+                    .order_by(ExecutionEvent.id.asc()).limit(200).all())
+            status = db.query(Execution.status).filter(Execution.id == execution_id).scalar()
+            return [{
+                "id": r.id, "type": r.type, "node_id": r.node_id, "agent_name": r.agent_name,
+                "message": r.message, "data": r.data or {},
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+            } for r in rows], status
+        finally:
+            db.close()
+
+    async def events():
+        last_id, idle, finished_for = after, 0.0, 0.0
+        yield "retry: 3000\n\n"                      # browser reconnect delay
+        while True:
+            if await request.is_disconnected():
+                break
+            rows, status = await asyncio.to_thread(fetch, last_id)
+            for row in rows:
+                last_id = row["id"]
+                yield f"id: {row['id']}\ndata: {json.dumps(row)}\n\n"
+            if rows:
+                idle = 0.0
+            if status in FINISHED and not rows:
+                finished_for += 0.5
+                if finished_for >= 2.0:              # give late events a moment, then close
+                    yield f"event: end\ndata: {json.dumps({'status': status})}\n\n"
+                    break
+            idle += 0.5
+            if idle >= 15:
+                yield ": heartbeat\n\n"
+                idle = 0.0
+            await asyncio.sleep(0.5)
+
+    return StreamingResponse(events(), media_type="text/event-stream", headers={
+        "Cache-Control":     "no-cache",
+        "X-Accel-Buffering": "no",                   # don't let proxies buffer the stream
+    })
 
 
 @router.get("/", response_model=List[ExecutionOut])
@@ -101,8 +231,8 @@ def get_execution(
 ):
     """
     GET /executions/{id}
-    Returns execution status + all agent logs.
-    Called by the frontend every 2 seconds while status = 'running'.
+    Returns execution status + all agent logs (full inputs/outputs).
+    The monitor calls it once on open and again whenever an agent finishes.
     """
     execution = db.query(Execution).filter(
         Execution.id      == execution_id,

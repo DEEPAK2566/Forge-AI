@@ -83,6 +83,8 @@ export default function WorkflowBuilder() {
   const [loadingAgents,  setLoadingAgents]  = useState(true)
 
   const [selectedNodeId, setSelectedNodeId] = useState(null)
+  // After the first save, Save and Run UPDATE this workflow instead of creating a copy
+  const [savedId,        setSavedId]        = useState(null)
   const [selectedEdgeId, setSelectedEdgeId] = useState(null)
   // nodeTypes MUST be memoized — prevents infinite re-render loop
   const nodeTypes = useMemo(() => ({ agentNode: AgentNode }), [])
@@ -162,13 +164,22 @@ export default function WorkflowBuilder() {
     setIsDirty(true)
   }
 
+  // Create the workflow the first time, update it every time after that
+  const saveWorkflow = async (status) => {
+    const body = { name: workflowName, nodes, edges, status }
+    if (savedId) return workflowService.update(savedId, body)
+    const saved = await workflowService.create(body)
+    setSavedId(saved.id)
+    return saved
+  }
+
   const handleSave = async (status = 'draft') => {
     if (!workflowName.trim()) { setError('Workflow name is required.'); return }
     if (nodes.length === 0)   { setError('Add at least one agent to the canvas.'); return }
     setError('')
     setSaving(true)
     try {
-      await workflowService.create({ name: workflowName, nodes, edges, status })
+      await saveWorkflow(status)
       navigate('/myspace')
     } catch (err) {
       setError(err.response?.data?.detail || 'Failed to save workflow.')
@@ -206,7 +217,7 @@ export default function WorkflowBuilder() {
             setError('')
             setSaving(true)
             try {
-              const saved = await workflowService.create({ name: workflowName, nodes, edges, status: 'published' })
+              const saved = await saveWorkflow('published')
               const { default: executionService } = await import('../../services/executionService')
               const execution = await executionService.run(saved.id, input)
               navigate(`/executions/${execution.id}`)

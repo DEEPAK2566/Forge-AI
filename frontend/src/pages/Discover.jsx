@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react'
 import { useNavigate }         from 'react-router-dom'
 import { Search, Play, Trash2, Edit2 } from 'lucide-react'
 import api from '../services/api'
+import RunWorkflowModal from '../components/common/RunWorkflowModal'
+import executionService from '../services/executionService'
 
 const TABS = [
   { id: 'agents',          label: 'Agents',         emoji: '🤖', endpoint: '/discover/agents'          },
@@ -339,23 +341,35 @@ export default function Discover() {
   }
 
   // Run workflow handler
-  const handleRun = async (workflow) => {
-    const input = window.prompt(
-      `Run "${workflow.name}"\nEnter the initial input:`,
-      'Analyze and summarize the situation.'
-    )
-    if (input === null) return
+  // Opens the Run window, which asks for every {{ variable }} the agents use
+  const [runTarget, setRunTarget] = useState(null)
+  const handleRun = (workflow) => setRunTarget(workflow)
+
+  const startRun = async (input) => {
+    const workflow = runTarget
+    setRunTarget(null)
     try {
-      const { default: executionService } = await import('../services/executionService')
       const execution = await executionService.run(workflow.id, input)
       navigate(`/executions/${execution.id}`)
     } catch (err) {
-      alert('Could not start execution. You must own this workflow.')
+      alert(err.response?.status === 404
+        ? 'Could not start execution. You can only run your own workflows.'
+        : 'Could not start execution. Please try again.')
     }
   }
 
   return (
     <div className="page-wrapper">
+
+      {/* Run window — same {{ variable }} form as the workflow builder */}
+      {runTarget && (
+        <RunWorkflowModal
+          nodes={runTarget.nodes || []}
+          workflowName={runTarget.name}
+          onCancel={() => setRunTarget(null)}
+          onConfirm={startRun}
+        />
+      )}
 
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '20px', flexWrap: 'wrap' }}>

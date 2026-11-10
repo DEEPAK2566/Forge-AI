@@ -71,7 +71,8 @@ def _sub(text: str, variables: dict) -> str:
     return re.sub(r'\{\{\s*([^}]+?)\s*\}\}', repl, text)
 
 
-def build_agent_prompt(agent, input_text: str, guardrail_text: str = "", context_text: str = "") -> str:
+def build_agent_prompt(agent, input_text: str, guardrail_text: str = "", context_text: str = "",
+                       workflow_vars: dict = None) -> str:
     """
     Build the full LLM prompt from agent config + runtime input.
     
@@ -85,14 +86,15 @@ def build_agent_prompt(agent, input_text: str, guardrail_text: str = "", context
       4. This function substitutes them into the agent's instructions
       5. The LLM receives fully-resolved text
     """
-    # Try to parse input as JSON variable map
-    variables    = {}
+    # Variables typed in the Run window reach EVERY agent (not just the first),
+    # so {{ job_name }} works in any agent's instructions.
+    variables    = dict(workflow_vars or {})
     display_input = input_text or ''
 
     try:
         parsed = json.loads(input_text or '{}')
         if isinstance(parsed, dict) and parsed:
-            variables     = parsed
+            variables.update(parsed)
             display_input = '\n'.join(f"  {k}: {v}" for k, v in parsed.items())
     except (json.JSONDecodeError, TypeError, ValueError):
         pass
@@ -247,15 +249,16 @@ def call_groq(prompt: str, model: str = "groq/compound",temperature: float = 0.7
         raise RuntimeError(f"Groq API error: {str(e)}")
     
 def call_llm(agent, input_text: str, fallback: bool = True,
-             guardrail_text: str = "", context_text: str = "") -> str:
+             guardrail_text: str = "", context_text: str = "", workflow_vars: dict = None) -> str:
     """
     Main entry point — routes to the right LLM based on agent config.
 
     guardrail_text : rules from attached guardrails (top of the prompt)
     context_text   : knowledge-base chunks + real tool outputs
     fallback=True  : if the primary LLM fails, tries the other one.
+    workflow_vars  : values from the Run window, for {{ variable }} substitution
     """
-    prompt = build_agent_prompt(agent, input_text, guardrail_text, context_text)
+    prompt = build_agent_prompt(agent, input_text, guardrail_text, context_text, workflow_vars)
     engine = (agent.ai_engine or "gemini").lower()
     model  = agent.model or ("gemini-2.5-flash" if engine == "gemini" else "groq/compound")
 
@@ -301,6 +304,10 @@ def call_llm(agent, input_text: str, fallback: bool = True,
 # Returns (final_text, calls) where calls is a list of
 #   {"tool", "args", "result"} for the Execution Monitor.
 # ══════════════════════════════════════════════════════════════════════════
+
+class ToolsAlreadyRan(RuntimeError):
+    """The model failed after tools had already run — do not retry or re-run tools."""
+
 
 # Groq models that support custom tools (groq/compound does not)
 GROQ_TOOL_MODELS = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"]
@@ -427,13 +434,21 @@ def _groq_tool_loop(prompt, model, temperature, top_p, tool_specs, execute_tool,
 
 
 def call_llm_with_tools(agent, input_text: str, guardrail_text: str, context_text: str,
-                        tool_specs: list, execute_tool) -> tuple:
+                        tool_specs: list, execute_tool, workflow_vars: dict = None) -> tuple:
     """
     Agentic entry point used when an agent has tools attached.
     Gemini agents use Gemini; Groq agents use a Groq model that supports tools.
-    If the chosen provider fails, the other provider is tried.
+    If the chosen provider fails BEFORE any tool ran, the other provider is tried.
+    Once a tool has run, we never start over on another provider — that would
+    repeat side effects (a second commit, a duplicate ticket).
     """
-    prompt = build_agent_prompt(agent, input_text, guardrail_text, context_text)
+    ran = {"count": 0}
+
+    def counted_execute(name, args):
+        ran["count"] += 1
+        return execute_tool(name, args)
+
+    prompt = build_agent_prompt(agent, input_text, guardrail_text, context_text, workflow_vars)
     prompt = f"{TOOL_USE_INSTRUCTIONS}\n\n{prompt}"
     engine      = (agent.ai_engine or "gemini").lower()
     model       = agent.model or ("gemini-2.5-flash" if engine == "gemini" else GROQ_TOOL_MODELS[0])
@@ -449,12 +464,17 @@ def call_llm_with_tools(agent, input_text: str, guardrail_text: str, context_tex
                 use_model = model if engine == "gemini" else "gemini-2.5-flash"
                 print(f"[LLM] Tool-calling with Gemini / {use_model} (max {max_iter} steps)")
                 return _gemini_tool_loop(prompt, use_model, temperature, top_p,
-                                         tool_specs, execute_tool, max_iter)
+                                         tool_specs, counted_execute, max_iter)
             if provider == "groq" and settings.GROQ_API_KEY:
                 print(f"[LLM] Tool-calling with Groq (max {max_iter} steps)")
                 return _groq_tool_loop(prompt, model, temperature, top_p,
-                                       tool_specs, execute_tool, max_iter)
+                                       tool_specs, counted_execute, max_iter)
         except Exception as e:
+            if getattr(e, "forge_stop", False):     # user pressed Cancel
+                raise
             last_error = e
             print(f"[LLM] Tool-calling with {provider} failed: {e}")
+            if ran["count"]:
+                raise ToolsAlreadyRan(
+                    f"{provider} failed after {ran['count']} tool call(s) had already run: {e}")
     raise RuntimeError(f"Tool-calling failed on all providers: {last_error}")

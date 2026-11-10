@@ -19,6 +19,10 @@ class ExecutionLogOut(BaseModel):
     finished_at:    Optional[datetime]
     model_config = {"from_attributes": True}
 
+class RunRequest(BaseModel):
+    """Body of POST /executions/run/{id}. The Run-window text or JSON of variables."""
+    user_input: str = ""
+
 class ExecutionOut(BaseModel):
     id:            int
     user_id:       int

@@ -191,15 +191,29 @@ export default function RunWorkflowModal({ nodes, workflowName, onConfirm, onCan
                       — used in: {v.agentName}
                     </span>
                   </label>
-                  <textarea
-                    value={values[v.name] || ''}
-                    onChange={e => setValues(prev => ({ ...prev, [v.name]: e.target.value }))}
-                    placeholder={`Enter value for ${v.name}...`}
-                    rows={v.name.toLowerCase().includes('input') || v.name.toLowerCase().includes('content') ? 4 : 2}
-                    style={{ ...inputStyle, resize: 'vertical' }}
-                    onFocus={e => e.target.style.borderColor = '#7C3AED'}
-                    onBlur={e  => e.target.style.borderColor = '#2A2A3D'}
-                  />
+                  {/token|password|secret|api_?key|credential/i.test(v.name) ? (
+                    // Credentials: masked, never shown on screen
+                    <input
+                      type="password"
+                      autoComplete="off"
+                      value={values[v.name] || ''}
+                      onChange={e => setValues(prev => ({ ...prev, [v.name]: e.target.value }))}
+                      placeholder={`Enter ${v.name} (hidden)`}
+                      style={inputStyle}
+                      onFocus={e => e.target.style.borderColor = '#7C3AED'}
+                      onBlur={e  => e.target.style.borderColor = '#2A2A3D'}
+                    />
+                  ) : (
+                    <textarea
+                      value={values[v.name] || ''}
+                      onChange={e => setValues(prev => ({ ...prev, [v.name]: e.target.value }))}
+                      placeholder={`Enter value for ${v.name}...`}
+                      rows={v.name.toLowerCase().includes('input') || v.name.toLowerCase().includes('content') ? 4 : 2}
+                      style={{ ...inputStyle, resize: 'vertical' }}
+                      onFocus={e => e.target.style.borderColor = '#7C3AED'}
+                      onBlur={e  => e.target.style.borderColor = '#2A2A3D'}
+                    />
+                  )}
                 </div>
               ))}
             </>

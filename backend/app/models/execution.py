@@ -6,8 +6,10 @@ class Execution(Base):
     """
     One record per workflow run.
     
-    status flow:  pending → running → completed
+        status flow:  pending → running → completed
                                    → failed
+                                   → cancelling → cancelled   (Cancel button)
+                                   → interrupted              (server restarted mid-run)
     
     The actual per-agent logs are in ExecutionLog.
     """
@@ -55,3 +57,24 @@ class ExecutionLog(Base):
 
     started_at     = Column(DateTime(timezone=True), nullable=True)
     finished_at    = Column(DateTime(timezone=True), nullable=True)
+
+
+class ExecutionEvent(Base):
+    """
+    Live feed of what happened during a run, in order:
+    node started, tool called, tool failed, node finished, run cancelled...
+
+    The engine writes one row per event; GET /executions/{id}/stream sends new
+    rows to the browser as they appear. Stored in the database (not memory) so a
+    page refresh or a second browser tab can replay the whole run.
+    """
+    __tablename__ = "execution_events"
+
+    id           = Column(Integer, primary_key=True, index=True)
+    execution_id = Column(Integer, ForeignKey("executions.id"), nullable=False, index=True)
+    type         = Column(String(40), nullable=False)      # e.g. tool_started, node_completed
+    node_id      = Column(String(100), nullable=True)
+    agent_name   = Column(String(200), nullable=True)
+    message      = Column(Text, nullable=True)             # short human-readable line
+    data         = Column(JSON, default=dict)              # details (tool args, status...)
+    created_at   = Column(DateTime(timezone=True), nullable=True)
