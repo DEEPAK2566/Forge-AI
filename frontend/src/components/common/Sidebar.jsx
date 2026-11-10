@@ -1,11 +1,12 @@
 import { NavLink, useNavigate } from 'react-router-dom'
-import { LayoutGrid, Rocket, Layers, Compass, Zap, LogOut } from 'lucide-react'
+import { LayoutGrid, Rocket, Layers, Compass, Zap, LogOut, History } from 'lucide-react'
 import useAuthStore from '../../store/authStore'
 
 const navItems = [
   { icon: LayoutGrid, label: 'My Space', path: '/myspace'  },
   { icon: Rocket,     label: 'Build',    path: '/build'    },
   { icon: Compass,    label: 'Discover', path: '/discover' },
+  { icon: History,    label: 'Runs',     path: '/executions' },
 ]
 
 export default function Sidebar() {

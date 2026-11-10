@@ -5,6 +5,7 @@ import {
   SkipForward, Ban, AlertTriangle, BookOpen, Shield, Brain, Square, Radio,
 } from 'lucide-react'
 import executionService from '../../services/executionService'
+import RerunButton from '../../components/common/RerunButton'
 
 // ── Time helpers ───────────────────────────────────────────────────────────
 // The local SQLite fallback returns times without a timezone ("2026-11-10T06:22:19").
@@ -71,6 +72,7 @@ const EVENT_LOOK = {
   guardrails_applied: { icon: Shield,        color: '#10B981' },
   llm_started:        { icon: Brain,         color: '#A78BFA' },
   llm_fallback:       { icon: AlertTriangle, color: '#F59E0B' },
+  llm_retry:          { icon: Clock,         color: '#F59E0B' },
   tool_started:       { icon: Wrench,        color: '#F59E0B' },
   tool_finished:      { icon: CheckCircle,   color: '#10B981' },
   tool_failed:        { icon: XCircle,       color: '#EF4444' },
@@ -436,7 +438,7 @@ export default function ExecutionMonitor() {
       <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: '#5A5A7A', marginBottom: '20px' }}>
         <Link to="/myspace" style={{ color: '#5A5A7A', textDecoration: 'none' }}>FORGE</Link>
         <ChevronRight size={13} />
-        <span>Executions</span>
+        <Link to="/executions" style={{ color: '#5A5A7A', textDecoration: 'none' }}>Runs</Link>
         <ChevronRight size={13} />
         <span style={{ color: '#F0F0FF' }}>#{execution?.id}</span>
       </div>
@@ -520,6 +522,7 @@ export default function ExecutionMonitor() {
                 <Square size={12} /> {status === 'cancelling' ? 'Stopping…' : 'Cancel run'}
               </button>
             )}
+            {!isRunning && <RerunButton execution={execution} />}
           </div>
         </div>
 

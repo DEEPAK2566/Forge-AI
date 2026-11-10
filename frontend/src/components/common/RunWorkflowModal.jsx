@@ -5,13 +5,16 @@ import agentService from '../../services/agentService'
 // Regex to find {{ variable_name }} patterns anywhere in text
 const VAR_PATTERN = /\{\{\s*([^}]+?)\s*\}\}/g
 
-export default function RunWorkflowModal({ nodes, workflowName, onConfirm, onCancel }) {
+// initialInput (optional): the stored input of an earlier run, for "Re-run".
+// Its values pre-fill the form; values stored as [REDACTED] (tokens) must be typed again.
+export default function RunWorkflowModal({ nodes, workflowName, onConfirm, onCancel, initialInput = '' }) {
   // step: 'loading' while fetching agents | 'variables' if {{ }} found | 'simple' otherwise
   const [step,         setStep]         = useState('loading')
   const [variables,    setVariables]    = useState([])   // [{ name, agentName }]
   const [values,       setValues]       = useState({})   // { var_name: '' }
   const [simpleInput,  setSimpleInput]  = useState('Analyze and summarize the situation.')
   const [error,        setError]        = useState('')
+  const [hiddenCount,  setHiddenCount]  = useState(0)    // re-run: secrets to re-enter
 
   // On mount: fetch all agents in this workflow and parse {{ }} patterns
   useEffect(() => {
@@ -44,6 +47,17 @@ export default function RunWorkflowModal({ nodes, workflowName, onConfirm, onCan
         }
       }
 
+      // Re-run: the earlier run's values (and any keys the agents don't mention,
+      // e.g. a tool's databricks_host) come back as fields too
+      let previous = null
+      try {
+        const parsed = JSON.parse(initialInput || '')
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) previous = parsed
+      } catch { /* not JSON — plain text input */ }
+      if (previous) {
+        Object.keys(previous).forEach(k => { if (!found.has(k)) found.set(k, 'previous run') })
+      }
+
       const varList = Array.from(found.entries()).map(([name, agentName]) => ({
         name,
         agentName,
@@ -51,10 +65,17 @@ export default function RunWorkflowModal({ nodes, workflowName, onConfirm, onCan
 
       setVariables(varList)
 
-      // Initialize all values to empty string
+      // Pre-fill from the earlier run; tokens were never stored, so those stay empty
       const init = {}
-      varList.forEach(v => { init[v.name] = '' })
+      let hidden = 0
+      varList.forEach(v => {
+        const old = previous ? previous[v.name] : undefined
+        if (old === '[REDACTED]') hidden += 1
+        init[v.name] = old !== undefined && old !== '[REDACTED]' ? String(old) : ''
+      })
       setValues(init)
+      setHiddenCount(hidden)
+      if (!previous && initialInput) setSimpleInput(initialInput)
 
       setStep(varList.length > 0 ? 'variables' : 'simple')
     }
@@ -165,6 +186,19 @@ export default function RunWorkflowModal({ nodes, workflowName, onConfirm, onCan
                   in your agent descriptions. Fill them in and they will be injected into each agent automatically.
                 </p>
               </div>
+
+              {/* Re-run: say why some fields are empty */}
+              {hiddenCount > 0 && (
+                <div style={{
+                  padding: '10px 14px', marginBottom: '16px', borderRadius: '10px',
+                  backgroundColor: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)',
+                }}>
+                  <p style={{ fontSize: '12px', color: '#F59E0B', lineHeight: '1.55' }}>
+                    Values from the previous run are filled in. {hiddenCount} secret value{hiddenCount > 1 ? 's were' : ' was'} never
+                    stored (tokens are redacted), so please enter {hiddenCount > 1 ? 'them' : 'it'} again.
+                  </p>
+                </div>
+              )}
 
               {/* One input per detected variable */}
               {variables.map(v => (

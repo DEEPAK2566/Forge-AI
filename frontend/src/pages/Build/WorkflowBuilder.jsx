@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useMemo, memo, useEffect } from 'react'
-import { useNavigate, Link } from 'react-router-dom'
+import { useNavigate, useParams, Link } from 'react-router-dom'
 import ReactFlow, {
   Background,
   Controls,
@@ -65,6 +65,7 @@ const AgentNode = memo(({ data, selected }) => {
 // ── Main component ─────────────────────────────────────────────────────────
 export default function WorkflowBuilder() {
   const navigate         = useNavigate()
+  const { workflowId }   = useParams()   // set when opened as /build/workflow/:workflowId (Edit)
   const reactFlowWrapper = useRef(null)
   const nodeCounter      = useRef(1)
 
@@ -86,8 +87,38 @@ export default function WorkflowBuilder() {
   // After the first save, Save and Run UPDATE this workflow instead of creating a copy
   const [savedId,        setSavedId]        = useState(null)
   const [selectedEdgeId, setSelectedEdgeId] = useState(null)
+  const [loadingWorkflow, setLoadingWorkflow] = useState(!!workflowId)
+  const [needsFit,        setNeedsFit]        = useState(false)
   // nodeTypes MUST be memoized — prevents infinite re-render loop
   const nodeTypes = useMemo(() => ({ agentNode: AgentNode }), [])
+
+  // ── Edit mode: load the saved workflow onto the canvas ─────────────────
+  useEffect(() => {
+    if (!workflowId) return
+    workflowService.get(workflowId)
+      .then(wf => {
+        setWorkflowName(wf.name || '')
+        setNodes(wf.nodes || [])
+        setEdges(wf.edges || [])
+        setSavedId(wf.id)              // Save / Run now UPDATE this workflow
+        // New nodes must not reuse an existing id (node_1, node_2...)
+        const used = (wf.nodes || [])
+          .map(n => parseInt(String(n.id).replace('node_', ''), 10))
+          .filter(n => !isNaN(n))
+        nodeCounter.current = Math.max(0, ...used) + 1
+        setNeedsFit(true)
+      })
+      .catch(() => setError('Could not open this workflow. It may have been deleted, or it belongs to another user.'))
+      .finally(() => setLoadingWorkflow(false))
+  }, [workflowId])
+
+  // Zoom the canvas to show the loaded workflow (once React Flow is ready)
+  useEffect(() => {
+    if (needsFit && rfInstance && nodes.length) {
+      requestAnimationFrame(() => rfInstance.fitView({ padding: 0.2 }))
+      setNeedsFit(false)
+    }
+  }, [needsFit, rfInstance, nodes.length])
 
   useEffect(() => {
     agentService.list()
@@ -120,12 +151,16 @@ export default function WorkflowBuilder() {
     const bounds   = reactFlowWrapper.current.getBoundingClientRect()
     const position = rfInstance.project({ x: e.clientX - bounds.left, y: e.clientY - bounds.top })
     const newNode  = {
-      id:   `node_${nodeCounter.current++}`,
       type: 'agentNode',
       position,
       data: { agent_id: agent.id, agent_name: agent.name, avatar_emoji: agent.avatar_emoji || '🤖', execution_type: 'sequential' },
     }
-    setNodes(prev => [...prev, newNode])
+    setNodes(prev => {
+      // Pick an id no node on the canvas already uses (matters when editing)
+      let id = `node_${nodeCounter.current++}`
+      while (prev.some(n => n.id === id)) id = `node_${nodeCounter.current++}`
+      return [...prev, { ...newNode, id }]
+    })
     setIsDirty(true)
   }, [rfInstance, setNodes])
 
@@ -236,7 +271,9 @@ export default function WorkflowBuilder() {
           <ChevronRight size={13} />
           <span>Build</span>
           <ChevronRight size={13} />
-          <span style={{ color: '#F0F0FF', fontWeight: '500' }}>Workflow</span>
+          <span style={{ color: '#F0F0FF', fontWeight: '500' }}>
+            {savedId ? 'Edit Workflow' : 'Workflow'}{loadingWorkflow ? ' — loading…' : ''}
+          </span>
         </div>
 
         <input

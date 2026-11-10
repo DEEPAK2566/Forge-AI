@@ -13,6 +13,7 @@ import KBBuilder        from './pages/Build/KBBuilder'
 import WorkflowBuilder  from './pages/Build/WorkflowBuilder'
 import GuardrailBuilder from './pages/Build/GuardrailBuilder'
 import ExecutionMonitor from './pages/Executions/ExecutionMonitor'
+import ExecutionHistory from './pages/Executions/ExecutionHistory'
 import Discover         from './pages/Discover'
 import BuildHome        from './pages/Build/index'
 
@@ -39,7 +40,9 @@ function App() {
           <Route path="build/tool/:toolId"  element={<ToolBuilder />}  />
           <Route path="build/kb"              element={<KBBuilder />}        />
           <Route path="build/workflow"        element={<WorkflowBuilder />}  />
+          <Route path="build/workflow/:workflowId" element={<WorkflowBuilder />} />
           <Route path="build/guardrail"       element={<GuardrailBuilder />} />
+          <Route path="executions"            element={<ExecutionHistory />} />
           <Route path="executions/:executionId" element={<ExecutionMonitor />} />
         </Route>
       </Routes>

@@ -6,13 +6,14 @@ from typing import List, Optional
 from fastapi import APIRouter, HTTPException, Depends, Body, Request
 from fastapi.responses import StreamingResponse
 from jose import JWTError
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db, SessionLocal
 from app.models.execution import Execution, ExecutionLog, ExecutionEvent
 from app.models.workflow import Workflow
 from app.models.user import User
-from app.schemas.execution import ExecutionOut, RunRequest
+from app.schemas.execution import ExecutionOut, RunRequest, ExecutionSummary, HistoryPage
 from app.api.v1.auth import get_current_user, oauth2_scheme
 from app.services.auth_service import decode_access_token
 from app.services.execution_engine import run_workflow
@@ -221,6 +222,47 @@ def list_executions(
             ExecutionLog.execution_id == exe.id
         ).all()
     return executions
+
+
+@router.get("/history", response_model=HistoryPage)
+def execution_history(
+    limit:        int = 25,
+    offset:       int = 0,
+    status:       str = "",
+    workflow_id:  Optional[int] = None,
+    db:           Session = Depends(get_db),
+    current_user: User    = Depends(get_current_user),
+):
+    """
+    GET /executions/history?limit=25&offset=0&status=failed&workflow_id=3
+
+    Powers the Runs page. Returns run summaries WITHOUT agent outputs (those can
+    be large), newest first, plus the total count for "Load more".
+    Declared before /{execution_id} so "history" isn't read as an id.
+    """
+    limit = max(1, min(limit, 100))
+    query = db.query(Execution).filter(Execution.user_id == current_user.id)
+    if status:
+        statuses = [s.strip() for s in status.split(",") if s.strip()]
+        query = query.filter(Execution.status.in_(statuses))
+    if workflow_id:
+        query = query.filter(Execution.workflow_id == workflow_id)
+
+    total = query.count()
+    rows  = query.order_by(Execution.id.desc()).offset(max(0, offset)).limit(limit).all()
+
+    # Agent-card count per run, in one query
+    counts = dict(
+        db.query(ExecutionLog.execution_id, func.count(ExecutionLog.id))
+        .filter(ExecutionLog.execution_id.in_([r.id for r in rows] or [0]))
+        .group_by(ExecutionLog.execution_id).all()
+    )
+    items = [ExecutionSummary(
+        id=r.id, workflow_id=r.workflow_id, workflow_name=r.workflow_name, user_input=r.user_input,
+        status=r.status, error=r.error, started_at=r.started_at, finished_at=r.finished_at,
+        agents=counts.get(r.id, 0),
+    ) for r in rows]
+    return HistoryPage(items=items, total=total)
 
 
 @router.get("/{execution_id}", response_model=ExecutionOut)

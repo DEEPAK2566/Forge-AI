@@ -19,6 +19,23 @@ class ExecutionLogOut(BaseModel):
     finished_at:    Optional[datetime]
     model_config = {"from_attributes": True}
 
+class ExecutionSummary(BaseModel):
+    """One row of the Runs page — no agent outputs, so the list stays small and fast."""
+    id:            int
+    workflow_id:   Optional[int]
+    workflow_name: Optional[str]
+    user_input:    Optional[str]      # stored redacted — tokens show as [REDACTED]
+    status:        Optional[str]
+    error:         Optional[str]
+    started_at:    Optional[datetime]
+    finished_at:   Optional[datetime]
+    agents:        int = 0            # agent cards in this run (loop rounds count separately)
+    model_config = {"from_attributes": True}
+
+class HistoryPage(BaseModel):
+    items: List[ExecutionSummary]
+    total: int
+
 class RunRequest(BaseModel):
     """Body of POST /executions/run/{id}. The Run-window text or JSON of variables."""
     user_input: str = ""

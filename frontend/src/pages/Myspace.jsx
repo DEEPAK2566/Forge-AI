@@ -18,6 +18,7 @@ function statusColor(status) {
   if (status === 'completed') return '#10B981'
   if (status === 'failed')    return '#EF4444'
   if (status === 'running')   return '#06B6D4'
+  if (status === 'cancelled' || status === 'interrupted' || status === 'cancelling') return '#F59E0B'
   return '#5A5A7A'
 }
 
@@ -170,7 +171,7 @@ export default function MySpace() {
           <span className="forge-section-title">Action Zone</span>
           {executions.length > 0 && (
             <span style={{ marginLeft: 'auto', fontSize: '12px', color: '#5A5A7A' }}>
-              Recent executions
+              Recent executions · <Link to="/executions" style={{ color: '#A78BFA', textDecoration: 'none' }}>View all runs →</Link>
             </span>
           )}
         </div>

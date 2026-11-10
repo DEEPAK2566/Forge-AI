@@ -22,6 +22,16 @@ const executionService = {
     return response.data
   },
 
+  // GET /executions/history — run summaries for the Runs page (no agent outputs)
+  // status: '' | 'running' | 'completed' | 'failed' | 'cancelled,interrupted' ...
+  async history({ limit = 25, offset = 0, status = '', workflowId = null } = {}) {
+    const params = { limit, offset }
+    if (status) params.status = status
+    if (workflowId) params.workflow_id = workflowId
+    const response = await api.get('/executions/history', { params })
+    return response.data   // { items: [...], total }
+  },
+
   // GET /executions/{id} — full execution with logs
   async get(id) {
     const response = await api.get(`/executions/${id}`)

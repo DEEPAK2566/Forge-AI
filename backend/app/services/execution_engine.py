@@ -22,7 +22,7 @@ from app.core.database import SessionLocal
 from app.models.execution import Execution, ExecutionLog
 from app.models.agent import Agent
 from app.models.workflow import Workflow
-from app.services.llm_service import call_llm, ToolsAlreadyRan
+from app.services.llm_service import call_llm, ToolsAlreadyRan, retry_listener
 from app.services.guardrail_service import (
     redact_secrets, load_guardrails, build_guardrail_prompt, check_output,
 )
@@ -260,6 +260,8 @@ def _run_single_node(
 
         def think():
             """Everything the LLM does for this node — runs under the time limit."""
+            # Rate-limit retries in llm_service show up on this agent's live feed
+            retry_listener.fn = lambda msg: ev("llm_retry", msg)
             context = "\n\n".join(context_sections)
 
             if not tool_records:

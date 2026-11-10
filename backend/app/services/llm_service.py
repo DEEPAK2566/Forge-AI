@@ -3,7 +3,55 @@ LLM Service — uses the new google-genai SDK (replaces deprecated google-genera
 Free models: gemini-2.0-flash (default), gemini-1.5-flash, gemini-1.5-pro
 """
 
+import random
+import re as _re
+import threading
+import time
+
 from app.core.config import settings
+
+
+# ── Retry on rate limits ──────────────────────────────────────────────────
+# Gemini's free tier allows ~10–15 requests/minute. Parallel agents, loops and
+# tool steps can hit that, and Gemini answers "429 RESOURCE_EXHAUSTED".
+# Instead of failing the agent, wait and try again (up to 3 times), using the
+# wait time Gemini suggests when it gives one. (Groq's SDK already retries 429s.)
+# A DAILY quota that is used up is not retried — waiting seconds won't help.
+
+_RETRYABLE  = ("429", "resource_exhausted", "rate limit", "rate_limit", "too many requests",
+               "503", "unavailable", "overloaded")
+_NOT_WORTH  = ("per day", "perday", "limit: 0")
+RETRY_WAITS = [3, 8, 20]          # seconds, used when the error gives no hint
+MAX_WAIT    = 30                  # never wait longer than this for one retry
+
+# The engine sets retry_listener.fn (per thread) to show "retrying..." on the live feed
+retry_listener = threading.local()
+
+
+def _retry_wait(error: Exception, attempt: int) -> float:
+    text = str(error)
+    hint = _re.search(r"retry in ([0-9.]+)\s*s", text, _re.I) or \
+           _re.search(r"retryDelay['\"]?\s*[:=]\s*['\"]?([0-9.]+)s", text)
+    wait = float(hint.group(1)) if hint else RETRY_WAITS[min(attempt, len(RETRY_WAITS) - 1)]
+    return min(MAX_WAIT, wait) + random.uniform(0, 1)
+
+
+def with_retry(call, label: str, retries: int = 3):
+    """Run call(); on a rate-limit/overload error wait and try again, up to `retries` times."""
+    for attempt in range(retries + 1):
+        try:
+            return call()
+        except Exception as e:
+            low = str(e).lower()
+            if attempt >= retries or not any(k in low for k in _RETRYABLE) or any(k in low for k in _NOT_WORTH):
+                raise
+            wait = _retry_wait(e, attempt)
+            msg  = f"{label} is rate-limited — retrying in {wait:.0f}s (attempt {attempt + 2} of {retries + 1})"
+            print(f"[LLM] {msg}")
+            notify = getattr(retry_listener, "fn", None)
+            if notify:
+                notify(msg)
+            time.sleep(wait)
 
 
 # ── Model name map ────────────────────────────────────────────────────────
@@ -178,10 +226,13 @@ def call_gemini(prompt: str, model: str = "gemini-2.5-flash",
 
         for candidate in candidates:
             try:
-                response = client.models.generate_content(
-                    model    = candidate,
-                    contents = prompt,
-                    config = gen_config
+                response = with_retry(
+                    lambda: client.models.generate_content(
+                        model    = candidate,
+                        contents = prompt,
+                        config   = gen_config,
+                    ),
+                    f"Gemini ({candidate})",
                 )
                 if candidate != model:
                     print(f"[LLM] Gemini model {model} unavailable, using fallback {candidate}")
@@ -361,7 +412,9 @@ def _gemini_tool_loop(prompt, model, temperature, top_p, tool_specs, execute_too
     model    = MODEL_MAP.get(model, model)
 
     for step in range(max_iter):
-        response = client.models.generate_content(model=model, contents=contents, config=config)
+        response = with_retry(
+            lambda: client.models.generate_content(model=model, contents=contents, config=config),
+            f"Gemini ({model})")
         function_calls = response.function_calls or []
         if not function_calls:
             return (response.text or ""), calls
@@ -381,10 +434,10 @@ def _gemini_tool_loop(prompt, model, temperature, top_p, tool_specs, execute_too
     # Out of iterations — ask for a final answer without tools
     contents.append(types.Content(role="user", parts=[types.Part.from_text(
         text="Tool-call limit reached. Give your final answer now using the results above.")]))
-    final = client.models.generate_content(
+    final = with_retry(lambda: client.models.generate_content(
         model=model, contents=contents,
         config=types.GenerateContentConfig(temperature=temperature, top_p=top_p),
-    )
+    ), f"Gemini ({model})")
     return (final.text or ""), calls
 
 

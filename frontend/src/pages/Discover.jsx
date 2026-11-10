@@ -127,7 +127,7 @@ function ArtifactCard({ item, type, onRun, onEdit, onDelete }) {
     item.practice_area,
   ].filter(Boolean)
 
-  const isClickable = type === 'agents' || type === 'tools'
+  const isClickable = type === 'agents' || type === 'tools' || type === 'workflows'
 
   return (
     <>
@@ -213,7 +213,7 @@ function ArtifactCard({ item, type, onRun, onEdit, onDelete }) {
 
           <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
 
-            {/* Edit button — agents and tools only */}
+            {/* Edit button — agents, tools and workflows */}
             {isClickable && (
               <button
                 onClick={() => onEdit(item)}
@@ -338,6 +338,7 @@ export default function Discover() {
   const handleEdit = (item) => {
     if (activeTab === 'agents') navigate(`/build/agent/${item.id}`)
     if (activeTab === 'tools')  navigate(`/build/tool/${item.id}`)
+    if (activeTab === 'workflows') navigate(`/build/workflow/${item.id}`)
   }
 
   // Run workflow handler
