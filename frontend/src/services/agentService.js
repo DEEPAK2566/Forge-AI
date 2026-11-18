@@ -41,6 +41,12 @@ const agentService = {
   async remove(id) {
     await api.delete(`/agents/${id}`)
   },
+
+  // POST /agents/{id}/clone — copy someone's published item (or your own) into your account
+  async clone(id) {
+    const response = await api.post(`/agents/${id}/clone`)
+    return response.data
+  },
 }
 
 export default agentService

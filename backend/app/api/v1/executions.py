@@ -224,6 +224,33 @@ def list_executions(
     return executions
 
 
+@router.get("/community")
+def community_runs(
+    limit:        int     = 8,
+    db:           Session = Depends(get_db),
+    current_user: User    = Depends(get_current_user),
+):
+    """
+    GET /executions/community — the latest runs by EVERYONE, for the Action Zone in My Space.
+    Only safe summary fields are returned (no inputs, no outputs): workflow name, status,
+    time and the first name of who ran it. is_mine says whether the viewer may open it.
+    """
+    from app.services.sharing import first_name
+    rows = (db.query(Execution, User)
+            .join(User, User.id == Execution.user_id)
+            .order_by(Execution.started_at.desc())
+            .limit(max(1, min(limit, 50)))
+            .all())
+    return [{
+        "id":            e.id,
+        "workflow_name": e.workflow_name,
+        "status":        e.status,
+        "started_at":    e.started_at,
+        "is_mine":       e.user_id == current_user.id,
+        "run_by":        "You" if e.user_id == current_user.id else first_name(u),
+    } for e, u in rows]
+
+
 @router.get("/history", response_model=HistoryPage)
 def execution_history(
     limit:        int = 25,

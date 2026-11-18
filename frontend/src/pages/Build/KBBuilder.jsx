@@ -6,6 +6,7 @@ import {
   AlertCircle, Loader, GitBranch, CloudUpload,
 } from 'lucide-react'
 import kbService from '../../services/kbService'
+import { APP_NAME } from '../../config/brand'
 
 // ── Static data ────────────────────────────────────────────────────────────
 
@@ -204,7 +205,7 @@ export default function KBBuilder() {
         borderBottom: '1px solid #2A2A3D', backgroundColor: '#0D0D14', flexShrink: 0,
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: '#5A5A7A' }}>
-          <Link to="/myspace" style={{ color: '#5A5A7A', textDecoration: 'none' }}>FORGE</Link>
+          <Link to="/myspace" style={{ color: '#5A5A7A', textDecoration: 'none' }}>{APP_NAME}</Link>
           <ChevronRight size={13} />
           <span>Build</span>
           <ChevronRight size={13} />

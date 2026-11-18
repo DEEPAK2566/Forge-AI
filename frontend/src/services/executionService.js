@@ -17,6 +17,12 @@ const executionService = {
   },
 
   // GET /executions/ — recent executions for the dashboard
+  // GET /executions/community — latest runs by everyone (name, status, who ran it)
+  async community(limit = 8) {
+    const response = await api.get(`/executions/community?limit=${limit}`)
+    return response.data
+  },
+
   async list(limit = 20) {
     const response = await api.get('/executions/', { params: { limit } })
     return response.data

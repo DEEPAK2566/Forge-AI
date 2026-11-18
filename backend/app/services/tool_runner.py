@@ -25,9 +25,11 @@ import re
 import tempfile
 import subprocess
 
+from app.core.config import settings
+
 SANDBOX_SCRIPT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tool_sandbox.py")
 RESULT_MARKER  = "__FORGE_TOOL_RESULT__"
-TOOL_TIMEOUT_SECONDS = 60
+TOOL_TIMEOUT_SECONDS = settings.TOOL_TIMEOUT_SECONDS   # set on Render to change it
 
 # Only these server variables are passed through — the OS needs them to run Python
 # and make HTTPS calls. Nothing from backend/.env is in this list.

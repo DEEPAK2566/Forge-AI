@@ -1,6 +1,6 @@
 """
 LLM Service — uses the new google-genai SDK (replaces deprecated google-generativeai).
-Free models: gemini-2.0-flash (default), gemini-1.5-flash, gemini-1.5-pro
+Models: settings.GEMINI_MODEL / settings.GROQ_MODEL (see core/config.py)
 """
 
 import random
@@ -54,35 +54,27 @@ def with_retry(call, label: str, retries: int = 3):
             time.sleep(wait)
 
 
-# ── Model name map ────────────────────────────────────────────────────────
-# Some agents were saved with old model names before the SDK switch.
-# This maps old names to working equivalents so old agents still run.
-MODEL_MAP = {
-    "gemini-pro":            "gemini-pro-latest",
-    "gemini-1.5-flash":      "gemini-2.5-flash",
-    "gemini-1.5-pro":        "gemini-2.5-pro",
-    "gemini-2.0-flash":      "gemini-2.0-flash",
-    "gemini-2.0-flash-lite": "gemini-2.0-flash-lite",
+# ── Model names ───────────────────────────────────────────────────────────
+# Google and Groq retire models regularly (Gemini 2.0 Flash: June 2026, Gemini 2.5 Flash:
+# October 2026, Groq Llama 3.x: August 2026). Agents saved with a retired name are sent to
+# the model set in GEMINI_MODEL / GROQ_MODEL, so old agents keep working.
+RETIRED_GEMINI = {
+    "gemini-pro", "gemini-1.5-flash", "gemini-1.5-pro", "gemini-2.0-flash", "gemini-2.0-flash-lite",
+    "gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-2.5-pro",
 }
+RETIRED_GROQ = {
+    "llama3-8b", "llama3-8b-8192", "llama3-70b-8192", "mixtral-8x7b-32768", "allam-2-7b",
+    "llama-3.1-8b-instant", "llama-3.3-70b-versatile", "groq/compound", "groq/compound-mini",
+}
+MODEL_MAP = {name: settings.GEMINI_MODEL for name in RETIRED_GEMINI}
 
-GEMINI_MODEL_CANDIDATES = [
-    "gemini-2.5-flash",
-    "gemini-flash-latest",
-    "gemini-2.5-pro",
-    "gemini-pro-latest",
-    "gemini-2.5-flash-lite",
-    "gemini-2.0-flash",
-    "gemini-2.0-flash-lite",
-]
-
-GROQ_MODEL_CANDIDATES = [
-    "groq/compound",
-    "allam-2-7b",
-    "llama3-8b",
-    "llama3-8b-8192",
-    "mixtral-8x7b-32768",
-    "llama3-70b-8192",
-]
+# Tried in this order when a model is not found (dict.fromkeys removes duplicates)
+GEMINI_MODEL_CANDIDATES = list(dict.fromkeys([
+    settings.GEMINI_MODEL, "gemini-flash-latest", "gemini-flash-lite-latest", "gemini-pro-latest",
+]))
+GROQ_MODEL_CANDIDATES = list(dict.fromkeys([
+    settings.GROQ_MODEL, "openai/gpt-oss-120b", "openai/gpt-oss-20b",
+]))
 
 
 def _model_candidates(model: str, engine: str) -> list[str]:
@@ -91,7 +83,7 @@ def _model_candidates(model: str, engine: str) -> list[str]:
         candidates += [m for m in GEMINI_MODEL_CANDIDATES if m not in candidates]
         return candidates
     if engine == "groq":
-        candidates = [model] if model else []
+        candidates = [model] if model and model not in RETIRED_GROQ else []
         candidates += [m for m in GROQ_MODEL_CANDIDATES if m not in candidates]
         return candidates
     return [model] if model else []
@@ -195,17 +187,15 @@ def build_agent_prompt(agent, input_text: str, guardrail_text: str = "", context
 
     return "\n".join(parts)
 
-def call_gemini(prompt: str, model: str = "gemini-2.5-flash",
+def call_gemini(prompt: str, model: str = "",
                 temperature: float = 0.7, top_p: float = 0.9) -> str:
     """
-    Call Gemini using the new google-genai SDK.
-    
-    Free tier limits (as of 2025):
-      - gemini-2.0-flash:      15 req/min, 1500 req/day
-      - gemini-2.0-flash-lite: 30 req/min, 1500 req/day  (lighter, faster)
-      - gemini-1.5-flash:      15 req/min, 1500 req/day
-      - gemini-1.5-pro:        2 req/min,  50 req/day     (smarter, slower)
-    
+    Call Gemini using the google-genai SDK.
+
+    Free-tier limits change often and differ per model — check yours in
+    Google AI Studio → Usage / Rate limits. If a model is retired, set
+    GEMINI_MODEL on Render (e.g. gemini-flash-lite-latest).
+
     Get a free key at: aistudio.google.com
     """
     if not settings.GEMINI_API_KEY:
@@ -215,7 +205,8 @@ def call_gemini(prompt: str, model: str = "gemini-2.5-flash",
         )
 
     # Normalize model name and build a fallback candidate list.
-    candidates = _model_candidates(MODEL_MAP.get(model, model), "gemini")
+    model      = MODEL_MAP.get(model, model) or settings.GEMINI_MODEL
+    candidates = _model_candidates(model, "gemini")
     try:
         from google import genai
         from google.genai import types
@@ -253,7 +244,7 @@ def call_gemini(prompt: str, model: str = "gemini-2.5-flash",
         raise RuntimeError(f"Gemini API error: {str(e)}")
 
 
-def call_groq(prompt: str, model: str = "groq/compound",temperature: float = 0.7, top_p: float = 0.9) -> str:   
+def call_groq(prompt: str, model: str = "", temperature: float = 0.7, top_p: float = 0.9) -> str:   
     """
     Call Groq API.
     Free tier: ~30 req/min. Very fast.
@@ -276,7 +267,7 @@ def call_groq(prompt: str, model: str = "groq/compound",temperature: float = 0.7
                 response = client.chat.completions.create(
                     messages   = [{"role": "user", "content": prompt}],
                     model      = candidate,
-                    max_tokens  = 2048,
+                    max_tokens  = 4096,
                     temperature = temperature,
                     top_p       = top_p,
                 )
@@ -311,7 +302,7 @@ def call_llm(agent, input_text: str, fallback: bool = True,
     """
     prompt = build_agent_prompt(agent, input_text, guardrail_text, context_text, workflow_vars)
     engine = (agent.ai_engine or "gemini").lower()
-    model  = agent.model or ("gemini-2.5-flash" if engine == "gemini" else "groq/compound")
+    model  = agent.model or (settings.GEMINI_MODEL if engine == "gemini" else settings.GROQ_MODEL)
 
     # The sliders in the Agent Builder — previously saved but never used
     temperature = agent.temperature if agent.temperature is not None else 0.7
@@ -360,8 +351,8 @@ class ToolsAlreadyRan(RuntimeError):
     """The model failed after tools had already run — do not retry or re-run tools."""
 
 
-# Groq models that support custom tools (groq/compound does not)
-GROQ_TOOL_MODELS = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"]
+# Groq models that support custom tools (function calling)
+GROQ_TOOL_MODELS = list(dict.fromkeys([settings.GROQ_MODEL, "openai/gpt-oss-120b", "openai/gpt-oss-20b"]))
 
 TOOL_USE_INSTRUCTIONS = (
     "You have functions (tools) available. Call a tool whenever you need real data "
@@ -455,7 +446,7 @@ def _groq_tool_loop(prompt, model, temperature, top_p, tool_specs, execute_tool,
     for step in range(max_iter):
         response = client.chat.completions.create(
             model=model, messages=messages, tools=tools, tool_choice="auto",
-            temperature=temperature, top_p=top_p, max_tokens=2048,
+            temperature=temperature, top_p=top_p, max_tokens=4096,
         )
         msg = response.choices[0].message
         if not msg.tool_calls:
@@ -481,7 +472,7 @@ def _groq_tool_loop(prompt, model, temperature, top_p, tool_specs, execute_tool,
     messages.append({"role": "user",
                      "content": "Tool-call limit reached. Give your final answer now using the results above."})
     final = client.chat.completions.create(
-        model=model, messages=messages, temperature=temperature, top_p=top_p, max_tokens=2048,
+        model=model, messages=messages, temperature=temperature, top_p=top_p, max_tokens=4096,
     )
     return (final.choices[0].message.content or ""), calls
 
@@ -504,7 +495,7 @@ def call_llm_with_tools(agent, input_text: str, guardrail_text: str, context_tex
     prompt = build_agent_prompt(agent, input_text, guardrail_text, context_text, workflow_vars)
     prompt = f"{TOOL_USE_INSTRUCTIONS}\n\n{prompt}"
     engine      = (agent.ai_engine or "gemini").lower()
-    model       = agent.model or ("gemini-2.5-flash" if engine == "gemini" else GROQ_TOOL_MODELS[0])
+    model       = agent.model or (settings.GEMINI_MODEL if engine == "gemini" else GROQ_TOOL_MODELS[0])
     temperature = agent.temperature if agent.temperature is not None else 0.7
     top_p       = agent.top_p       if agent.top_p       is not None else 0.9
     max_iter    = max(1, min(agent.max_iterations or 5, 10))
@@ -514,7 +505,7 @@ def call_llm_with_tools(agent, input_text: str, guardrail_text: str, context_tex
     for provider in order:
         try:
             if provider == "gemini" and settings.GEMINI_API_KEY:
-                use_model = model if engine == "gemini" else "gemini-2.5-flash"
+                use_model = model if engine == "gemini" else settings.GEMINI_MODEL
                 print(f"[LLM] Tool-calling with Gemini / {use_model} (max {max_iter} steps)")
                 return _gemini_tool_loop(prompt, use_model, temperature, top_p,
                                          tool_specs, counted_execute, max_iter)

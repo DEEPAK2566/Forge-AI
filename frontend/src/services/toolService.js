@@ -36,6 +36,12 @@ const toolService = {
   async remove(id) {
     await api.delete(`/tools/${id}`)
   },
+
+  // POST /tools/{id}/clone — copy someone's published item (or your own) into your account
+  async clone(id) {
+    const response = await api.post(`/tools/${id}/clone`)
+    return response.data
+  },
 }
 
 export default toolService

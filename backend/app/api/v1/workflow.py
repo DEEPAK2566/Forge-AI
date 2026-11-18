@@ -7,6 +7,7 @@ from app.models.workflow import Workflow
 from app.models.user import User
 from app.schemas.workflow import WorkflowCreate, WorkflowUpdate, WorkflowOut
 from app.api.v1.auth import get_current_user
+from app.services.sharing import clone_row
 from app.models.execution import Execution, ExecutionLog, ExecutionEvent
 
 router = APIRouter(prefix="/workflows", tags=["Workflows"])
@@ -123,3 +124,17 @@ def delete_workflow(workflow_id: int, db: Session = Depends(get_db), current_use
     db.delete(workflow)
     db.commit()
     return None
+
+
+@router.post("/{workflow_id}/clone", response_model=WorkflowOut, status_code=201)
+def clone_workflow(
+    workflow_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    POST /workflows/{id}/clone
+    Copies your own or someone else's PUBLISHED workflow into your account as a draft
+    named "<name> (copy)". You edit the copy; the original stays untouched.
+    """
+    return clone_row(db, Workflow, workflow_id, current_user)

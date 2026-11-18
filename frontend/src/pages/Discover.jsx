@@ -1,9 +1,12 @@
 import { useState, useEffect } from 'react'
 import { useNavigate }         from 'react-router-dom'
-import { Search, Play, Trash2, Edit2 } from 'lucide-react'
+import { Search, Play, Trash2, Edit2, Copy } from 'lucide-react'
 import api from '../services/api'
 import RunWorkflowModal from '../components/common/RunWorkflowModal'
 import executionService from '../services/executionService'
+import agentService     from '../services/agentService'
+import toolService      from '../services/toolService'
+import workflowService  from '../services/workflowService'
 
 const TABS = [
   { id: 'agents',          label: 'Agents',         emoji: '🤖', endpoint: '/discover/agents'          },
@@ -18,15 +21,6 @@ const DELETE_ENDPOINTS = {
   workflows:       (id) => `/workflows/${id}`,
   tools:           (id) => `/tools/${id}`,
   knowledge_bases: (id) => `/knowledge-bases/${id}`,
-}
-
-function timeAgo(dateStr) {
-  if (!dateStr) return ''
-  const diff = Math.floor((Date.now() - new Date(dateStr)) / 1000)
-  if (diff < 60)    return `${diff}s ago`
-  if (diff < 3600)  return `${Math.floor(diff / 60)}m ago`
-  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`
-  return `${Math.floor(diff / 86400)}d ago`
 }
 
 // ── Delete confirmation modal ──────────────────────────────────────────────
@@ -112,7 +106,7 @@ function DeleteModal({ item, type, onConfirm, onCancel }) {
 }
 
 // ── Artifact card ──────────────────────────────────────────────────────────
-function ArtifactCard({ item, type, onRun, onEdit, onDelete }) {
+function ArtifactCard({ item, type, onRun, onEdit, onDelete, onClone }) {
   const [hovered,    setHovered]    = useState(false)
   const [showDelete, setShowDelete] = useState(false)
 
@@ -128,6 +122,9 @@ function ArtifactCard({ item, type, onRun, onEdit, onDelete }) {
   ].filter(Boolean)
 
   const isClickable = type === 'agents' || type === 'tools' || type === 'workflows'
+  // Only the owner may edit/delete. Everyone else gets Clone: a private copy they can open and change.
+  const mine      = item.is_mine
+  const [cloning, setCloning] = useState(false)
 
   return (
     <>
@@ -207,14 +204,14 @@ function ArtifactCard({ item, type, onRun, onEdit, onDelete }) {
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
           borderTop: '1px solid #2A2A3D', paddingTop: '10px',
         }}>
-          <span style={{ fontSize: '11px', color: '#5A5A7A' }}>
-            {timeAgo(item.created_at)}
+          <span style={{ fontSize: '11px', color: mine ? '#A78BFA' : '#8B8BB3' }}>
+            by {item.owner_name || 'Someone'}
           </span>
 
           <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
 
             {/* Edit button — agents, tools and workflows */}
-            {isClickable && (
+            {isClickable && mine && (
               <button
                 onClick={() => onEdit(item)}
                 title="Edit"
@@ -231,7 +228,25 @@ function ArtifactCard({ item, type, onRun, onEdit, onDelete }) {
             )}
 
             {/* Run button — workflows only */}
-            {type === 'workflows' && (
+            {/* Clone — someone else's item: copy it into your account, then edit the copy */}
+            {isClickable && !mine && (
+              <button
+                onClick={async () => { setCloning(true); await onClone(item); setCloning(false) }}
+                disabled={cloning}
+                title="Make your own copy to view and edit"
+                style={{
+                  padding: '5px 10px', borderRadius: '6px', cursor: cloning ? 'wait' : 'pointer',
+                  backgroundColor: 'rgba(6,182,212,0.08)',
+                  border: '1px solid rgba(6,182,212,0.3)',
+                  color: '#06B6D4', fontSize: '11px', fontWeight: '500',
+                  display: 'flex', alignItems: 'center', gap: '4px',
+                }}
+              >
+                <Copy size={10} /> {cloning ? 'Cloning...' : 'Clone'}
+              </button>
+            )}
+
+            {type === 'workflows' && mine && (
               <button
                 onClick={() => onRun(item)}
                 title="Run this workflow"
@@ -256,7 +271,8 @@ function ArtifactCard({ item, type, onRun, onEdit, onDelete }) {
               Published
             </span>
 
-            {/* Delete button */}
+            {/* Delete button — your own items only */}
+            {mine && (
             <button
               onClick={() => setShowDelete(true)}
               title="Delete"
@@ -270,6 +286,7 @@ function ArtifactCard({ item, type, onRun, onEdit, onDelete }) {
             >
               <Trash2 size={12} />
             </button>
+            )}
 
           </div>
         </div>
@@ -341,6 +358,18 @@ export default function Discover() {
     if (activeTab === 'workflows') navigate(`/build/workflow/${item.id}`)
   }
 
+  // Clone handler — copy someone else's item, then open YOUR copy in the builder
+  const handleClone = async (item) => {
+    const services = { agents: agentService, tools: toolService, workflows: workflowService }
+    const paths    = { agents: 'agent', tools: 'tool', workflows: 'workflow' }
+    try {
+      const copy = await services[activeTab].clone(item.id)
+      navigate(`/build/${paths[activeTab]}/${copy.id}`)
+    } catch (err) {
+      alert(err.response?.data?.detail || 'Could not clone. Please try again.')
+    }
+  }
+
   // Run workflow handler
   // Opens the Run window, which asks for every {{ variable }} the agents use
   const [runTarget, setRunTarget] = useState(null)
@@ -376,7 +405,7 @@ export default function Discover() {
       <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '20px', flexWrap: 'wrap' }}>
         <div style={{ flex: 1, minWidth: '200px' }}>
           <h1 style={{ fontSize: '20px', fontWeight: '700', color: '#F0F0FF', marginBottom: '3px' }}>Discover</h1>
-          <p style={{ fontSize: '13px', color: '#8B8BB3' }}>Browse, run, edit, or delete your published artifacts</p>
+          <p style={{ fontSize: '13px', color: '#8B8BB3' }}>Everything people have published. Edit or run your own; clone anyone else's to make it yours.</p>
         </div>
         <div style={{ position: 'relative', width: '280px' }}>
           <Search size={14} color="#5A5A7A" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
@@ -467,6 +496,7 @@ export default function Discover() {
               onRun={handleRun}
               onEdit={handleEdit}
               onDelete={handleDelete}
+              onClone={handleClone}
             />
           ))}
         </div>

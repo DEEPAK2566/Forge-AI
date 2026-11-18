@@ -19,6 +19,7 @@ import {
 import agentService     from '../../services/agentService'
 import workflowService  from '../../services/workflowService'
 import RunWorkflowModal from '../../components/common/RunWorkflowModal'
+import { APP_NAME } from '../../config/brand'
 
 // ── Execution type definitions ─────────────────────────────────────────────
 const EXEC_TYPES = {
@@ -267,7 +268,7 @@ export default function WorkflowBuilder() {
       {/* ── Top Bar ─────────────────────────────────────────────────── */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 24px', height: '52px', borderBottom: '1px solid #2A2A3D', backgroundColor: '#0D0D14', flexShrink: 0, gap: '16px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: '#5A5A7A', flexShrink: 0 }}>
-          <Link to="/myspace" style={{ color: '#5A5A7A', textDecoration: 'none' }}>FORGE</Link>
+          <Link to="/myspace" style={{ color: '#5A5A7A', textDecoration: 'none' }}>{APP_NAME}</Link>
           <ChevronRight size={13} />
           <span>Build</span>
           <ChevronRight size={13} />

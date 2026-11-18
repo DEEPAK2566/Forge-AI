@@ -35,7 +35,7 @@ class Agent(Base):
 
     # ── LLM Config ────────────────────────────────────
     ai_engine          = Column(String(50),  default="gemini")
-    model              = Column(String(100), default="gemini-1.5-flash")
+    model              = Column(String(100), default="gemini-flash-latest")
     behavior_preset    = Column(String(50),  default="balanced")
     temperature        = Column(Float,   default=0.7)
     top_p              = Column(Float,   default=0.9)

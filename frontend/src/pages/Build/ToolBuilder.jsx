@@ -6,6 +6,7 @@ import {
   X, Check, Play
 } from 'lucide-react'
 import toolService from '../../services/toolService'
+import { APP_NAME } from '../../config/brand'
 
 const PRACTICE_AREAS = [
   'AI/ML', 'API & Integration', 'Backend Engineering',
@@ -125,7 +126,7 @@ export default function ToolBuilder() {
           methodology:   tool.methodology    || '',
         })
       })
-      .catch(() => setError('Could not load tool.'))
+      .catch(() => setError('Could not open this tool. If someone else built it, find it in Discover and click Clone to get your own copy.'))
       .finally(() => setLoading(false))
   }, [toolId])
 
@@ -206,7 +207,7 @@ export default function ToolBuilder() {
       {/* Top Bar */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 24px', height: '52px', borderBottom: '1px solid #2A2A3D', backgroundColor: '#0D0D14', flexShrink: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: '#5A5A7A' }}>
-          <Link to="/myspace" style={{ color: '#5A5A7A', textDecoration: 'none' }}>FORGE</Link>
+          <Link to="/myspace" style={{ color: '#5A5A7A', textDecoration: 'none' }}>{APP_NAME}</Link>
           <ChevronRight size={13} />
           <span>Build</span>
           <ChevronRight size={13} />

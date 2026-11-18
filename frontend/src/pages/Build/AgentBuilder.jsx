@@ -3,6 +3,7 @@ import { useNavigate, useParams, Link } from 'react-router-dom'
 import { Zap, BookOpen, Shield, Wrench, ChevronRight, Save, Upload, X, Plus, Check } from 'lucide-react'
 import agentService     from '../../services/agentService'
 import SelectItemsModal from '../../components/agent/SelectItemsModal'
+import { APP_NAME } from '../../config/brand'
 
 const PRACTICE_AREAS = [
   'AI/ML', 'API & Integration', 'Backend Engineering', 'Business Operations',
@@ -20,15 +21,13 @@ const BEHAVIOR_PRESETS = ['Balanced', 'Deterministic', 'Creative', 'Verbose', 'F
 
 const MODELS = {
   gemini: [
-    { value: 'gemini-2.0-flash',      label: 'Gemini 2.0 Flash (Free — fastest)' },
-    { value: 'gemini-2.0-flash-lite', label: 'Gemini 2.0 Flash Lite (Free)' },
-    { value: 'gemini-1.5-flash',      label: 'Gemini 1.5 Flash (Free — stable)' },
-    { value: 'gemini-1.5-pro',        label: 'Gemini 1.5 Pro (slower, smarter)' },
+    { value: 'gemini-flash-latest',      label: 'Gemini Flash — latest (recommended)' },
+    { value: 'gemini-flash-lite-latest', label: 'Gemini Flash-Lite — latest (more free requests)' },
+    { value: 'gemini-pro-latest',        label: 'Gemini Pro — latest (smarter, small free quota)' },
   ],
   groq: [
-    { value: 'llama3-8b-8192',      label: 'Llama 3 8B (Free — fastest)' },
-    { value: 'llama3-70b-8192',     label: 'Llama 3 70B (Free — smarter)' },
-    { value: 'mixtral-8x7b-32768',  label: 'Mixtral 8x7B (Free)' },
+    { value: 'openai/gpt-oss-120b', label: 'GPT-OSS 120B on Groq (smarter)' },
+    { value: 'openai/gpt-oss-20b',  label: 'GPT-OSS 20B on Groq (fastest)' },
   ],
 }
 
@@ -80,7 +79,7 @@ export default function AgentBuilder() {
     name: '', details: '', avatar_emoji: '🤖', avatar_color: '#7C3AED',
     role: '', goal: '', backstory: '', description: '',
     practice_area: '', good_at: [],
-    ai_engine: 'gemini', model: 'gemini-2.0-flash',
+    ai_engine: 'gemini', model: 'gemini-flash-latest',
     behavior_preset: 'balanced', temperature: 0.7, top_p: 0.9,
     max_iterations: 5, max_rpm: 10, max_execution_time: 300,
     tool_ids: [], kb_ids: [], guardrail_ids: [],
@@ -103,7 +102,7 @@ export default function AgentBuilder() {
           practice_area:      agent.practice_area    || '',
           good_at:            agent.good_at          || [],
           ai_engine:          agent.ai_engine        || 'gemini',
-          model:              agent.model            || 'gemini-2.0-flash',
+          model:              agent.model            || 'gemini-flash-latest',
           behavior_preset:    agent.behavior_preset  || 'balanced',
           temperature:        agent.temperature      ?? 0.7,
           top_p:              agent.top_p            ?? 0.9,
@@ -115,7 +114,7 @@ export default function AgentBuilder() {
           guardrail_ids:      agent.guardrail_ids      || [],
         })
       })
-      .catch(() => setError('Could not load agent. It may have been deleted.'))
+      .catch(() => setError('Could not open this agent. If someone else built it, find it in Discover and click Clone to get your own copy.'))
       .finally(() => setLoading(false))
   }, [agentId])
 
@@ -210,7 +209,7 @@ export default function AgentBuilder() {
       {/* Top Bar */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 24px', height: '52px', borderBottom: '1px solid #2A2A3D', backgroundColor: '#0D0D14', flexShrink: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: '#5A5A7A' }}>
-          <Link to="/myspace" style={{ color: '#5A5A7A', textDecoration: 'none' }}>FORGE</Link>
+          <Link to="/myspace" style={{ color: '#5A5A7A', textDecoration: 'none' }}>{APP_NAME}</Link>
           <ChevronRight size={13} />
           <span>Build</span>
           <ChevronRight size={13} />
@@ -389,7 +388,7 @@ export default function AgentBuilder() {
               <div style={{ marginBottom: '6px', padding: '8px 12px', backgroundColor: 'rgba(124,58,237,0.06)', border: '1px solid rgba(124,58,237,0.15)', borderRadius: '8px' }}>
                 <p style={{ fontSize: '11px', color: '#8B5CF6', lineHeight: '1.5' }}>
                   💡 Use <code style={{ backgroundColor: 'rgba(124,58,237,0.15)', padding: '1px 5px', borderRadius: '3px' }}>{'{{ variable_name }}'}</code> for dynamic inputs.
-                  When this agent runs in a workflow, FORGE will show an input field for each variable.
+                  When this agent runs in a workflow, {APP_NAME} will show an input field for each variable.
                   Example: <code style={{ color: '#A78BFA' }}>{'Fetch files from {{ repo_url }} on {{ branch_name }}'}</code>
                 </p>
               </div>

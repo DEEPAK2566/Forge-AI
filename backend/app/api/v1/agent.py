@@ -7,6 +7,7 @@ from app.models.agent import Agent
 from app.models.user import User
 from app.schemas.agent import AgentCreate, AgentUpdate, AgentOut
 from app.api.v1.auth import get_current_user
+from app.services.sharing import clone_row
 from app.models.execution import ExecutionLog
 
 # prefix="/agents" means all routes here start with /agents1
@@ -126,3 +127,17 @@ def delete_agent(agent_id: int, db: Session = Depends(get_db), current_user = De
     db.delete(agent)
     db.commit()
     return None
+
+
+@router.post("/{agent_id}/clone", response_model=AgentOut, status_code=201)
+def clone_agent(
+    agent_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    POST /agents/{id}/clone
+    Copies your own or someone else's PUBLISHED agent into your account as a draft
+    named "<name> (copy)". You edit the copy; the original stays untouched.
+    """
+    return clone_row(db, Agent, agent_id, current_user)

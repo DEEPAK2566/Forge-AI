@@ -6,6 +6,7 @@ import {
 } from 'lucide-react'
 import executionService from '../../services/executionService'
 import RerunButton from '../../components/common/RerunButton'
+import { APP_NAME } from '../../config/brand'
 
 // ── Time helpers ───────────────────────────────────────────────────────────
 // The local SQLite fallback returns times without a timezone ("2026-11-10T06:22:19").
@@ -436,7 +437,7 @@ export default function ExecutionMonitor() {
 
       {/* ── Breadcrumb ──────────────────────────────────────────────── */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: '#5A5A7A', marginBottom: '20px' }}>
-        <Link to="/myspace" style={{ color: '#5A5A7A', textDecoration: 'none' }}>FORGE</Link>
+        <Link to="/myspace" style={{ color: '#5A5A7A', textDecoration: 'none' }}>{APP_NAME}</Link>
         <ChevronRight size={13} />
         <Link to="/executions" style={{ color: '#5A5A7A', textDecoration: 'none' }}>Runs</Link>
         <ChevronRight size={13} />

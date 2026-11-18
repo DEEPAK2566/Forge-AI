@@ -3,6 +3,7 @@ import { useNavigate, Link } from 'react-router-dom'
 import { ChevronRight, History, Loader, RefreshCw } from 'lucide-react'
 import executionService from '../../services/executionService'
 import RerunButton from '../../components/common/RerunButton'
+import { APP_NAME } from '../../config/brand'
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 // Local SQLite returns times without a timezone; they are UTC (see ExecutionMonitor)
@@ -79,7 +80,7 @@ export default function ExecutionHistory() {
 
       {/* Breadcrumb */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: '#5A5A7A', marginBottom: '20px' }}>
-        <Link to="/myspace" style={{ color: '#5A5A7A', textDecoration: 'none' }}>FORGE</Link>
+        <Link to="/myspace" style={{ color: '#5A5A7A', textDecoration: 'none' }}>{APP_NAME}</Link>
         <ChevronRight size={13} />
         <span style={{ color: '#F0F0FF' }}>Runs</span>
       </div>

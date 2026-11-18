@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { ChevronRight, Save, Upload, Shield, Plus, X } from 'lucide-react'
 import guardrailService from '../../services/guardrailService'
+import { APP_NAME } from '../../config/brand'
 
 const RULE_TEMPLATES = [
   'Never share confidential or private information.',
@@ -78,7 +79,7 @@ export default function GuardrailBuilder() {
       {/* Top Bar */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 24px', height: '52px', borderBottom: '1px solid #2A2A3D', backgroundColor: '#0D0D14', flexShrink: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: '#5A5A7A' }}>
-          <Link to="/myspace" style={{ color: '#5A5A7A', textDecoration: 'none' }}>FORGE</Link>
+          <Link to="/myspace" style={{ color: '#5A5A7A', textDecoration: 'none' }}>{APP_NAME}</Link>
           <ChevronRight size={13} />
           <span>Build</span>
           <ChevronRight size={13} />

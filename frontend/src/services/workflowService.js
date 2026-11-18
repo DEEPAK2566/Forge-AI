@@ -36,6 +36,12 @@ const workflowService = {
   async remove(id) {
     await api.delete(`/workflows/${id}`)
   },
+
+  // POST /workflows/{id}/clone — copy someone's published item (or your own) into your account
+  async clone(id) {
+    const response = await api.post(`/workflows/${id}/clone`)
+    return response.data
+  },
 }
 
 export default workflowService

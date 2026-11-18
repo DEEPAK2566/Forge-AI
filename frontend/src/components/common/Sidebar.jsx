@@ -1,6 +1,7 @@
 import { NavLink, useNavigate } from 'react-router-dom'
 import { LayoutGrid, Rocket, Layers, Compass, Zap, LogOut, History } from 'lucide-react'
 import useAuthStore from '../../store/authStore'
+import { APP_NAME } from '../../config/brand'
 
 const navItems = [
   { icon: LayoutGrid, label: 'My Space', path: '/myspace'  },
@@ -64,7 +65,7 @@ export default function Sidebar() {
           overflow: 'hidden',
           whiteSpace: 'nowrap',
         }}>
-          FORGE
+          {APP_NAME}
         </span>
       </div>
 

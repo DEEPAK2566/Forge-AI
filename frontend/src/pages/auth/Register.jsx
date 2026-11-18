@@ -3,6 +3,7 @@ import { useNavigate, Link } from 'react-router-dom'
 import { Zap, Mail, Lock, User, AlertCircle } from 'lucide-react'
 import authService from '../../services/authService'
 import useAuthStore from '../../store/authStore'
+import { APP_NAME } from '../../config/brand'
 
 export default function Register() {
   const [fullName, setFullName] = useState('')
@@ -61,7 +62,7 @@ export default function Register() {
           <div style={{ width: '54px', height: '54px', borderRadius: '15px', background: 'linear-gradient(135deg, #7C3AED 0%, #06B6D4 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px', boxShadow: '0 0 32px rgba(124,58,237,0.5)' }}>
             <Zap size={26} color="white" fill="white" />
           </div>
-          <h1 style={{ fontSize: '22px', fontWeight: '700', color: '#F0F0FF' }}>FORGE</h1>
+          <h1 style={{ fontSize: '22px', fontWeight: '700', color: '#F0F0FF' }}>{APP_NAME}</h1>
           <p style={{ color: '#5A5A7A', fontSize: '13px', marginTop: '4px' }}>Create your workspace</p>
         </div>
 

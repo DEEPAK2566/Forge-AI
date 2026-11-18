@@ -18,7 +18,7 @@ class AgentCreate(BaseModel):
     practice_area:      Optional[str]       = None
     good_at:            Optional[List[str]] = []
     ai_engine:          Optional[str]       = "gemini"
-    model:              Optional[str]       = "gemini-1.5-flash"
+    model:              Optional[str]       = "gemini-flash-latest"
     behavior_preset:    Optional[str]       = "balanced"
     temperature:        Optional[float]     = 0.7
     top_p:              Optional[float]     = 0.9

@@ -7,6 +7,7 @@ from app.models.tools import Tool
 from app.models.user import User
 from app.schemas.tools import ToolCreate, ToolUpdate, ToolOut
 from app.api.v1.auth import get_current_user
+from app.services.sharing import clone_row
 
 router = APIRouter(prefix="/tools", tags=["Tools"])
 
@@ -103,3 +104,17 @@ def delete_tool(
         raise HTTPException(status_code=404, detail="Tool not found")
     db.delete(tool)
     db.commit()
+
+
+@router.post("/{tool_id}/clone", response_model=ToolOut, status_code=201)
+def clone_tool(
+    tool_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    POST /tools/{id}/clone
+    Copies your own or someone else's PUBLISHED tool into your account as a draft
+    named "<name> (copy)". You edit the copy; the original stays untouched.
+    """
+    return clone_row(db, Tool, tool_id, current_user)

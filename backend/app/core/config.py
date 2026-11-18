@@ -28,6 +28,12 @@ class Settings(BaseSettings):
     GEMINI_API_KEY: str = ""   # from aistudio.google.com
     GROQ_API_KEY:   str = ""   # from console.groq.com
 
+    # Which models FORGE calls. Google and Groq retire models often — when that happens,
+    # change these on Render (Environment) instead of changing code.
+    # "gemini-flash-latest" always points to Google's newest Flash model.
+    GEMINI_MODEL: str = "gemini-flash-latest"
+    GROQ_MODEL:   str = "openai/gpt-oss-120b"
+
     # ── App ───────────────────────────────────────────────────
     # The React app URL — used in CORS to allow requests from it
     FRONTEND_URL: str = "http://localhost:5173"
@@ -40,6 +46,10 @@ class Settings(BaseSettings):
 
     # Highest "Max loops" value a Loop node may use.
     MAX_LOOP_ITERATIONS: int = 50
+
+    # How long one tool call may run before it is stopped (seconds).
+    # Data tools (warehouse start-up + COPY INTO) need more than the old 60.
+    TOOL_TIMEOUT_SECONDS: int = 180
 
     class Config:
         env_file = ".env"
