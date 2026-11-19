@@ -1,44 +1,45 @@
 import { useNavigate } from 'react-router-dom'
-import { Bot, GitBranch, Wrench, BookOpen, Shield, ChevronRight } from 'lucide-react'
+import { Bot, GitBranch, Plug, BookOpen, Shield, ChevronRight } from 'lucide-react'
+import { LABELS } from '../../config/brand'
 
 // The 5 artifact types with their icons, descriptions, and routes
 const buildItems = [
   {
     icon:        Bot,
-    label:       'Agent',
-    description: 'An autonomous AI worker with a role, goal, and instructions',
+    label:       LABELS.agent,
+    description: 'An AI worker with a role, a goal and instructions',
     path:        '/build/agent',
     color:       '#7C3AED',
     bg:          'rgba(124,58,237,0.12)',
   },
   {
     icon:        GitBranch,
-    label:       'Workflow',
-    description: 'Connect multiple agents in sequential, parallel, or branching flows',
+    label:       LABELS.workflow,
+    description: 'Link agents so they hand work to each other: in order, in parallel, or by condition',
     path:        '/build/workflow',
     color:       '#06B6D4',
     bg:          'rgba(6,182,212,0.12)',
   },
   {
-    icon:        Wrench,
-    label:       'Tool',
-    description: 'A Python function agents can call to interact with the real world',
+    icon:        Plug,
+    label:       LABELS.connector,
+    description: 'Python code an agent can call to reach an app: Azure, S3, GitHub, Databricks, any API',
     path:        '/build/tool',
     color:       '#10B981',
     bg:          'rgba(16,185,129,0.12)',
   },
   {
     icon:        BookOpen,
-    label:       'Knowledge Base',
-    description: 'Upload documents for agents to search and retrieve from',
+    label:       LABELS.library,
+    description: 'Upload documents (rules, manuals, specs) that agents search before they answer',
     path:        '/build/kb',
     color:       '#F59E0B',
     bg:          'rgba(245,158,11,0.12)',
   },
   {
     icon:        Shield,
-    label:       'Guardrail',
-    description: 'Rules and policies that govern agent behaviour and outputs',
+    label:       LABELS.guardrail,
+    description: 'Rules every agent that uses it must follow, checked on every answer',
     path:        '/build/guardrail',
     color:       '#8B5CF6',
     bg:          'rgba(139,92,246,0.12)',
@@ -53,10 +54,10 @@ export default function BuildPage() {
       {/* Header */}
       <div style={{ marginBottom: '28px' }}>
         <h1 style={{ fontSize: 'var(--font-h1)', fontWeight: '700', color: '#F0F0FF', marginBottom: '6px' }}>
-          Build
+          {LABELS.studio}
         </h1>
         <p style={{ color: '#8B8BB3', fontSize: '14px' }}>
-          Create agents, workflows, tools, knowledge bases, and guardrails
+          Create agents, workflows, connectors, context stores and guardrails
         </p>
       </div>
 

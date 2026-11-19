@@ -19,7 +19,7 @@ import {
 import agentService     from '../../services/agentService'
 import workflowService  from '../../services/workflowService'
 import RunWorkflowModal from '../../components/common/RunWorkflowModal'
-import { APP_NAME } from '../../config/brand'
+import { APP_NAME, LABELS } from '../../config/brand'
 
 // ── Execution type definitions ─────────────────────────────────────────────
 const EXEC_TYPES = {
@@ -270,7 +270,7 @@ export default function WorkflowBuilder() {
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: '#5A5A7A', flexShrink: 0 }}>
           <Link to="/myspace" style={{ color: '#5A5A7A', textDecoration: 'none' }}>{APP_NAME}</Link>
           <ChevronRight size={13} />
-          <span>Build</span>
+          <span>{LABELS.studio}</span>
           <ChevronRight size={13} />
           <span style={{ color: '#F0F0FF', fontWeight: '500' }}>
             {savedId ? 'Edit Workflow' : 'Workflow'}{loadingWorkflow ? ' — loading…' : ''}

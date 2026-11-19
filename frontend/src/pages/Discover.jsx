@@ -7,12 +7,13 @@ import executionService from '../services/executionService'
 import agentService     from '../services/agentService'
 import toolService      from '../services/toolService'
 import workflowService  from '../services/workflowService'
+import { LABELS } from '../config/brand'
 
 const TABS = [
   { id: 'agents',          label: 'Agents',         emoji: '🤖', endpoint: '/discover/agents'          },
   { id: 'workflows',       label: 'Workflows',       emoji: '🔀', endpoint: '/discover/workflows'       },
-  { id: 'tools',           label: 'Tools',           emoji: '🔧', endpoint: '/discover/tools'           },
-  { id: 'knowledge_bases', label: 'Knowledge Bases', emoji: '📚', endpoint: '/discover/knowledge-bases' },
+  { id: 'tools',           label: LABELS.connectors,           emoji: '🔧', endpoint: '/discover/tools'           },
+  { id: 'knowledge_bases', label: LABELS.libraries, emoji: '📚', endpoint: '/discover/knowledge-bases' },
 ]
 
 // Delete endpoint map per type
@@ -404,7 +405,7 @@ export default function Discover() {
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '20px', flexWrap: 'wrap' }}>
         <div style={{ flex: 1, minWidth: '200px' }}>
-          <h1 style={{ fontSize: '20px', fontWeight: '700', color: '#F0F0FF', marginBottom: '3px' }}>Discover</h1>
+          <h1 style={{ fontSize: '20px', fontWeight: '700', color: '#F0F0FF', marginBottom: '3px' }}>{LABELS.gallery}</h1>
           <p style={{ fontSize: '13px', color: '#8B8BB3' }}>Everything people have published. Edit or run your own; clone anyone else's to make it yours.</p>
         </div>
         <div style={{ position: 'relative', width: '280px' }}>

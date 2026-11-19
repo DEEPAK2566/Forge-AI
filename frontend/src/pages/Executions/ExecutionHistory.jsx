@@ -3,7 +3,7 @@ import { useNavigate, Link } from 'react-router-dom'
 import { ChevronRight, History, Loader, RefreshCw } from 'lucide-react'
 import executionService from '../../services/executionService'
 import RerunButton from '../../components/common/RerunButton'
-import { APP_NAME } from '../../config/brand'
+import { APP_NAME, LABELS } from '../../config/brand'
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 // Local SQLite returns times without a timezone; they are UTC (see ExecutionMonitor)
@@ -82,13 +82,13 @@ export default function ExecutionHistory() {
       <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: '#5A5A7A', marginBottom: '20px' }}>
         <Link to="/myspace" style={{ color: '#5A5A7A', textDecoration: 'none' }}>{APP_NAME}</Link>
         <ChevronRight size={13} />
-        <span style={{ color: '#F0F0FF' }}>Runs</span>
+        <span style={{ color: '#F0F0FF' }}>{LABELS.activity}</span>
       </div>
 
       {/* Title */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '6px', flexWrap: 'wrap' }}>
         <History size={20} color="#7C3AED" />
-        <h1 style={{ fontSize: '22px', fontWeight: 700, color: '#F0F0FF' }}>Runs</h1>
+        <h1 style={{ fontSize: '22px', fontWeight: 700, color: '#F0F0FF' }}>{LABELS.activity}</h1>
         <span style={{ fontSize: '13px', color: '#5A5A7A' }}>{total} total</span>
         <button onClick={() => load(0)} title="Refresh" style={{ marginLeft: 'auto', background: 'none', border: '1px solid #2A2A3D', borderRadius: '8px', padding: '6px 10px', color: '#8B8BB3', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px', fontSize: '12px' }}>
           <RefreshCw size={12} /> Refresh
@@ -121,7 +121,7 @@ export default function ExecutionHistory() {
       {items.length === 0 && !loading ? (
         <div style={{ backgroundColor: '#1A1A2E', border: '1px solid #2A2A3D', borderRadius: '12px', padding: '32px', textAlign: 'center' }}>
           <p style={{ color: '#5A5A7A', fontSize: '13px' }}>
-            {filter ? 'No runs match this filter.' : 'No runs yet — run a workflow from the builder or Discover.'}
+            {filter ? 'No runs match this filter.' : 'No runs yet — run a workflow from Build or the Gallery.'}
           </p>
         </div>
       ) : (

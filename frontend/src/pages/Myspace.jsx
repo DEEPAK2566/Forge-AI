@@ -8,15 +8,14 @@ import toolService      from '../services/toolService'
 import api              from '../services/api'
 import useAuthStore     from '../store/authStore'
 import HowItWorks       from '../components/common/HowItWorks'
-import { APP_NAME, APP_TAGLINE } from '../config/brand'
+import { APP_NAME, LABELS } from '../config/brand'
 
 const createItems = [
-  { label: 'Agent',          emoji: '🤖', path: '/build/agent'    },
-  { label: 'Workflow',       emoji: '🔀', path: '/build/workflow' },
-  { label: 'Tool',           emoji: '🔧', path: '/build/tool'     },
-  { label: 'Knowledge Base', emoji: '📚', path: '/build/kb'       },
-  { label: 'Guardrail',      emoji: '🛡️', path: '/build/guardrail'              },
-  
+  { label: LABELS.agent,     emoji: '🤖', path: '/build/agent',     hint: 'An AI worker with one job'        },
+  { label: LABELS.workflow,  emoji: '🔀', path: '/build/workflow',  hint: 'Agents linked in order'           },
+  { label: LABELS.connector, emoji: '🔌', path: '/build/tool',      hint: 'Python code that talks to an app' },
+  { label: LABELS.library,   emoji: '📚', path: '/build/kb',        hint: 'Documents agents can search'      },
+  { label: LABELS.guardrail, emoji: '🛡️', path: '/build/guardrail', hint: 'Rules agents must follow'          },
 ]
 
 function statusColor(status) {
@@ -38,7 +37,7 @@ function StatusDot({ status }) {
   )
 }
 
-// "2h ago" for the Action Zone (runs only — catalogue cards don't show ages any more)
+// "2h ago" for Live activity (runs only — catalogue cards don't show ages any more)
 function ago(value) {
   if (!value) return ''
   const s = Math.max(0, Math.floor((Date.now() - new Date(value)) / 1000))
@@ -91,7 +90,7 @@ export default function MySpace() {
   const stats = [
     { label: 'Agents',    value: loading ? '...' : agentCount,    color: '#7C3AED' },
     { label: 'Workflows', value: loading ? '...' : workflowCount, color: '#06B6D4' },
-    { label: 'Tools',     value: loading ? '...' : toolCount,     color: '#F59E0B' },
+    { label: LABELS.connectors, value: loading ? '...' : toolCount, color: '#F59E0B' },
   ]
 
   const hour     = new Date().getHours()
@@ -102,27 +101,19 @@ export default function MySpace() {
   return (
     <div className="page-wrapper">
 
-      {/* Welcome Banner */}
+      {/* First thing people see: what this platform is, as a living picture */}
+      <div style={{ marginBottom: '16px' }}>
+        <HowItWorks greeting={greeting} firstName={firstName} />
+      </div>
+
+      {/* Numbers: yours, and everyone's */}
       <div style={{
-        background: 'linear-gradient(135deg, #1A1A2E 0%, #13131F 100%)',
-        border: '1px solid #2A2A3D', borderRadius: '20px',
-        padding: 'var(--banner-padding)', marginBottom: '16px',
-        position: 'relative', overflow: 'hidden', width: '100%',
+        background: '#13131F', border: '1px solid #2A2A3D', borderRadius: '16px',
+        padding: '16px 20px', marginBottom: '16px', width: '100%',
+        display: 'flex', alignItems: 'center', gap: '20px', flexWrap: 'wrap',
       }}>
-        <div style={{
-          position: 'absolute', top: '-60px', right: '-60px',
-          width: '220px', height: '220px',
-          background: 'radial-gradient(circle, rgba(124,58,237,0.12) 0%, transparent 70%)',
-          borderRadius: '50%', pointerEvents: 'none',
-        }} />
-        <h1 style={{ fontSize: 'var(--font-h1)', fontWeight: '700', color: '#F0F0FF', marginBottom: '6px' }}>
-          {greeting}, {firstName}! ⚡
-        </h1>
-        <p style={{ color: '#8B8BB3', fontSize: '14px', marginBottom: '24px' }}>
-          Welcome to {APP_NAME}. {APP_TAGLINE}
-        </p>
-        <div style={{ fontSize: '11px', color: '#5A5A7A', marginBottom: '6px', letterSpacing: '0.5px' }}>YOUR WORK</div>
-        <div className="stats-row">
+        <div style={{ fontSize: '12px', color: '#8B8BB3', marginRight: '4px' }}>Your work</div>
+        <div className="stats-row" style={{ margin: 0 }}>
           {stats.map(s => (
             <div key={s.label} className="stat-item">
               <span className="stat-value" style={{ color: s.color }}>{s.value}</span>
@@ -133,7 +124,7 @@ export default function MySpace() {
         {/* Platform highlight: what EVERYONE has built */}
         {platform && (
           <div style={{
-            marginTop: '18px', padding: '14px 16px', borderRadius: '14px',
+            marginLeft: 'auto', padding: '12px 16px', borderRadius: '14px',
             background: 'linear-gradient(90deg, rgba(124,58,237,0.16), rgba(6,182,212,0.10))',
             border: '1px solid rgba(124,58,237,0.35)',
             display: 'flex', alignItems: 'center', gap: '18px', flexWrap: 'wrap',
@@ -142,7 +133,7 @@ export default function MySpace() {
               <Globe size={16} color="#A78BFA" /> Built on {APP_NAME} so far
             </span>
             {[
-              ['agents', 'agents built', '#A78BFA'], ['workflows', 'workflows', '#22D3EE'], ['tools', 'tools', '#FBBF24'],
+              ['agents', 'agents built', '#A78BFA'], ['workflows', 'workflows', '#22D3EE'], ['tools', 'connectors', '#FBBF24'],
               ['runs', 'runs', '#34D399'], ['builders', 'builders', '#F472B6'],
             ].map(([key, label, color]) => (
               <span key={key} style={{ display: 'flex', alignItems: 'baseline', gap: '5px' }}>
@@ -154,11 +145,11 @@ export default function MySpace() {
         )}
       </div>
 
-      {/* Creation Zone */}
+      {/* Start building */}
       <div className="forge-card">
         <div className="forge-section-header">
           <LayoutGrid size={15} color="#7C3AED" />
-          <span className="forge-section-title">Creation Zone</span>
+          <span className="forge-section-title">{LABELS.startBuilding}</span>
         </div>
         <div className="creation-grid">
           {createItems.map(item => (
@@ -187,23 +178,24 @@ export default function MySpace() {
               <div style={{ width: '38px', height: '38px', borderRadius: '10px', backgroundColor: 'rgba(124,58,237,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '20px' }}>
                 {item.emoji}
               </div>
-              <span style={{ fontSize: '12px', color: '#8B8BB3', fontWeight: '500', textAlign: 'center' }}>
+              <span style={{ fontSize: '12px', color: '#F0F0FF', fontWeight: '600', textAlign: 'center' }}>
                 {item.label}
               </span>
+              <span style={{ fontSize: '10.5px', color: '#7A7A9E', textAlign: 'center', lineHeight: 1.35 }}>{item.hint}</span>
               {!item.path && <span style={{ fontSize: '9px', color: '#5A5A7A' }}>Coming soon</span>}
             </div>
           ))}
         </div>
       </div>
 
-      {/* Action Zone */}
+      {/* Live activity: everyone's latest runs */}
       <div className="forge-card" style={{ marginBottom: 0 }}>
         <div className="forge-section-header">
           <Zap size={15} color="#F59E0B" />
-          <span className="forge-section-title">Action Zone</span>
+          <span className="forge-section-title">{LABELS.liveActivity}</span>
           {executions.length > 0 && (
             <span style={{ marginLeft: 'auto', fontSize: '12px', color: '#5A5A7A' }}>
-              Latest runs by everyone · <Link to="/executions" style={{ color: '#A78BFA', textDecoration: 'none' }}>View all runs →</Link>
+              Latest runs by everyone · <Link to="/executions" style={{ color: '#A78BFA', textDecoration: 'none' }}>Open {LABELS.activity}</Link>
             </span>
           )}
         </div>
@@ -261,10 +253,6 @@ export default function MySpace() {
         )}
       </div>
 
-      {/* For first-time visitors: what is a tool / agent / workflow? */}
-      <div style={{ marginTop: '16px' }}>
-        <HowItWorks />
-      </div>
     </div>
   )
 }

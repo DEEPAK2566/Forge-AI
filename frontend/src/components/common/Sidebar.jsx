@@ -1,13 +1,13 @@
 import { NavLink, useNavigate } from 'react-router-dom'
 import { LayoutGrid, Rocket, Layers, Compass, Zap, LogOut, History } from 'lucide-react'
 import useAuthStore from '../../store/authStore'
-import { APP_NAME } from '../../config/brand'
+import { APP_NAME, LABELS } from '../../config/brand'
 
 const navItems = [
-  { icon: LayoutGrid, label: 'My Space', path: '/myspace'  },
-  { icon: Rocket,     label: 'Build',    path: '/build'    },
-  { icon: Compass,    label: 'Discover', path: '/discover' },
-  { icon: History,    label: 'Runs',     path: '/executions' },
+  { icon: LayoutGrid, label: LABELS.home,     path: '/myspace'  },
+  { icon: Rocket,     label: LABELS.studio,   path: '/build'    },
+  { icon: Compass,    label: LABELS.gallery,  path: '/discover' },
+  { icon: History,    label: LABELS.activity, path: '/executions' },
 ]
 
 export default function Sidebar() {
@@ -59,8 +59,8 @@ export default function Sidebar() {
           <Zap size={20} color="white" fill="white" />
         </div>
         <span style={{
-          fontSize: '8px', fontWeight: '700',
-          color: '#7C3AED', letterSpacing: '2.5px',
+          fontSize: '9px', fontWeight: '700', fontFamily: "'Sora', 'Inter', sans-serif",
+          color: '#A78BFA', letterSpacing: '0.2px',
           // hide the text on very small screens
           overflow: 'hidden',
           whiteSpace: 'nowrap',

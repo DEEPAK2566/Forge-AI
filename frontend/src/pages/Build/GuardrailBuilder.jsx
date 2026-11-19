@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { ChevronRight, Save, Upload, Shield, Plus, X } from 'lucide-react'
 import guardrailService from '../../services/guardrailService'
-import { APP_NAME } from '../../config/brand'
+import { APP_NAME, LABELS } from '../../config/brand'
 
 const RULE_TEMPLATES = [
   'Never share confidential or private information.',
@@ -81,7 +81,7 @@ export default function GuardrailBuilder() {
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: '#5A5A7A' }}>
           <Link to="/myspace" style={{ color: '#5A5A7A', textDecoration: 'none' }}>{APP_NAME}</Link>
           <ChevronRight size={13} />
-          <span>Build</span>
+          <span>{LABELS.studio}</span>
           <ChevronRight size={13} />
           <span style={{ color: '#F0F0FF', fontWeight: '500' }}>Guardrail</span>
         </div>

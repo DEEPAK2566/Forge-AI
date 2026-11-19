@@ -6,7 +6,7 @@ import {
   AlertCircle, Loader, GitBranch, CloudUpload,
 } from 'lucide-react'
 import kbService from '../../services/kbService'
-import { APP_NAME } from '../../config/brand'
+import { APP_NAME, LABELS } from '../../config/brand'
 
 // ── Static data ────────────────────────────────────────────────────────────
 
@@ -151,7 +151,7 @@ export default function KBBuilder() {
 
   const handleSave = async (status = 'draft') => {
     if (!form.name.trim()) {
-      setError('Knowledge Base Name is required.')
+      setError(`${LABELS.library} name is required.`)
       return
     }
     setError('')
@@ -207,9 +207,9 @@ export default function KBBuilder() {
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: '#5A5A7A' }}>
           <Link to="/myspace" style={{ color: '#5A5A7A', textDecoration: 'none' }}>{APP_NAME}</Link>
           <ChevronRight size={13} />
-          <span>Build</span>
+          <span>{LABELS.studio}</span>
           <ChevronRight size={13} />
-          <span style={{ color: '#F0F0FF', fontWeight: '500' }}>Knowledge Base</span>
+          <span style={{ color: '#F0F0FF', fontWeight: '500' }}>{LABELS.library}</span>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -244,7 +244,7 @@ export default function KBBuilder() {
         <div style={{ ...panelStyle, width: '300px', flexShrink: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '14px 18px', borderBottom: '1px solid #2A2A3D', backgroundColor: '#1A1A2E', flexShrink: 0 }}>
             <span style={{ fontSize: '15px' }}>📚</span>
-            <span style={{ fontSize: '14px', fontWeight: '600', color: '#F0F0FF' }}>Knowledge Base Metadata</span>
+            <span style={{ fontSize: '14px', fontWeight: '600', color: '#F0F0FF' }}>{LABELS.library} details</span>
           </div>
 
           <div style={{ padding: '18px', overflowY: 'auto', flex: 1 }}>

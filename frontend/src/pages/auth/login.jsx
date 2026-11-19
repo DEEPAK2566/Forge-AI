@@ -56,7 +56,7 @@ export default function Login() {
             <Zap size={26} color="white" fill="white" />
           </div>
           <h1 style={{ fontSize: '22px', fontWeight: '700', color: '#F0F0FF' }}>{APP_NAME}</h1>
-          <p style={{ color: '#5A5A7A', fontSize: '13px', marginTop: '4px' }}>Agentic AI Platform</p>
+          <p style={{ color: '#5A5A7A', fontSize: '13px', marginTop: '4px' }}>Weave AI agents into workflows</p>
         </div>
 
         {/* Card */}

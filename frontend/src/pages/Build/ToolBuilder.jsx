@@ -6,7 +6,7 @@ import {
   X, Check, Play
 } from 'lucide-react'
 import toolService from '../../services/toolService'
-import { APP_NAME } from '../../config/brand'
+import { APP_NAME, LABELS } from '../../config/brand'
 
 const PRACTICE_AREAS = [
   'AI/ML', 'API & Integration', 'Backend Engineering',
@@ -126,7 +126,7 @@ export default function ToolBuilder() {
           methodology:   tool.methodology    || '',
         })
       })
-      .catch(() => setError('Could not open this tool. If someone else built it, find it in Discover and click Clone to get your own copy.'))
+      .catch(() => setError('Could not open this tool. If someone else built it, find it in the Gallery and click Clone to get your own copy.'))
       .finally(() => setLoading(false))
   }, [toolId])
 
@@ -160,7 +160,7 @@ export default function ToolBuilder() {
 
   const handleSave = async (status = 'draft') => {
     if (!form.name.trim()) {
-      setError('Tool Name is required.')
+      setError(`${LABELS.connector} name is required.`)
       return
     }
     setError('')
@@ -209,10 +209,10 @@ export default function ToolBuilder() {
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: '#5A5A7A' }}>
           <Link to="/myspace" style={{ color: '#5A5A7A', textDecoration: 'none' }}>{APP_NAME}</Link>
           <ChevronRight size={13} />
-          <span>Build</span>
+          <span>{LABELS.studio}</span>
           <ChevronRight size={13} />
           <span style={{ color: '#F0F0FF', fontWeight: '500' }}>
-            {isEditMode ? 'Edit Tool' : 'Tool'}
+            {isEditMode ? `Edit ${LABELS.connector.toLowerCase()}` : LABELS.connector}
           </span>
         </div>
 
@@ -238,19 +238,19 @@ export default function ToolBuilder() {
           <div style={panelHeader}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <span style={{ fontSize: '15px' }}>🔧</span>
-              <span style={{ fontSize: '14px', fontWeight: '600', color: '#F0F0FF' }}>Tool Metadata</span>
+              <span style={{ fontSize: '14px', fontWeight: '600', color: '#F0F0FF' }}>{LABELS.connector} details</span>
             </div>
           </div>
 
           <div style={{ padding: '18px', overflowY: 'auto', flex: 1 }}>
 
             <div style={gap}>
-              <Label text="Tool Name" required />
+              <Label text={`${LABELS.connector} name`} required />
               <input type="text" value={form.name} onChange={e => update('name', e.target.value)} placeholder="e.g. GitHub File Reader" style={inputStyle} onFocus={e => e.target.style.borderColor='#7C3AED'} onBlur={e => e.target.style.borderColor='#2A2A3D'} />
             </div>
 
             <div style={gap}>
-              <Label text="Tool Description" />
+              <Label text="What it does" />
               <textarea value={form.description} onChange={e => update('description', e.target.value)} placeholder="Describe what this tool does in 1–2 sentences..." rows={3} style={{ ...inputStyle, resize: 'vertical' }} onFocus={e => e.target.style.borderColor='#7C3AED'} onBlur={e => e.target.style.borderColor='#2A2A3D'} />
             </div>
 
@@ -326,7 +326,7 @@ export default function ToolBuilder() {
           <div style={panelHeader}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <span style={{ fontSize: '15px' }}>⚙️</span>
-              <span style={{ fontSize: '14px', fontWeight: '600', color: '#F0F0FF' }}>Tool Definition</span>
+              <span style={{ fontSize: '14px', fontWeight: '600', color: '#F0F0FF' }}>Python code</span>
             </div>
             <div style={{ display: 'flex', gap: '6px' }}>
               <button onClick={handleCopy} style={{ padding: '5px 10px', borderRadius: '6px', cursor: 'pointer', backgroundColor: 'transparent', border: '1px solid #2A2A3D', color: copied ? '#10B981' : '#8B8BB3', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px', transition: 'all 0.2s' }}>
@@ -342,7 +342,7 @@ export default function ToolBuilder() {
           {/* Tool class name bar */}
           <div style={{ padding: '10px 16px', borderBottom: '1px solid #2A2A3D', backgroundColor: '#0D0D14', flexShrink: 0 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <span style={{ fontSize: '12px', color: '#5A5A7A', whiteSpace: 'nowrap' }}>Tool Class</span>
+              <span style={{ fontSize: '12px', color: '#5A5A7A', whiteSpace: 'nowrap' }}>Class name</span>
               <input type="text" value={form.tool_class} onChange={e => update('tool_class', e.target.value)} placeholder="e.g. GitHubFileTool   (must match your class name in the code)" style={{ flex: 1, backgroundColor: 'transparent', border: 'none', borderBottom: '1px solid #2A2A3D', borderRadius: 0, padding: '4px 0', color: '#06B6D4', fontSize: '13px', fontFamily: 'monospace' }} onFocus={e => e.target.style.borderBottomColor='#7C3AED'} onBlur={e => e.target.style.borderBottomColor='#2A2A3D'} />
             </div>
           </div>

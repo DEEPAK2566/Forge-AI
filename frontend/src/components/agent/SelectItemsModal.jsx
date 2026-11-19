@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { X, Search, Check } from 'lucide-react'
 import api from '../../services/api'
+import { LABELS } from '../../config/brand'
 
 export default function SelectItemsModal({ type, currentIds = [], onConfirm, onCancel }) {
   const [items,    setItems]    = useState([])
@@ -10,8 +11,8 @@ export default function SelectItemsModal({ type, currentIds = [], onConfirm, onC
 
   // Endpoint + labels based on type
   const config = {
-    tools:          { endpoint: '/tools/',           label: 'Tools',           emoji: '🔧' },
-    knowledge_bases:{ endpoint: '/knowledge-bases/', label: 'Knowledge Bases', emoji: '📚' },
+    tools:          { endpoint: '/tools/',           label: LABELS.connectors,           emoji: '🔧' },
+    knowledge_bases:{ endpoint: '/knowledge-bases/', label: LABELS.libraries, emoji: '📚' },
     guardrails:     { endpoint: '/guardrails/',      label: 'Guardrails',      emoji: '🛡️' },
   }[type] || { endpoint: '/tools/', label: 'Items', emoji: '📦' }
 
@@ -76,7 +77,7 @@ export default function SelectItemsModal({ type, currentIds = [], onConfirm, onC
                 No {config.label.toLowerCase()} found
               </p>
               <p style={{ color: '#3A3A5A', fontSize: '12px' }}>
-                Create one first in the Build section
+                Create one first in the {LABELS.studio}
               </p>
             </div>
           ) : (
